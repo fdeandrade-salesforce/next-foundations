@@ -1,0 +1,239 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --foreground-rgb: 0, 0, 0;
+    --background-rgb: 255, 255, 255;
+  }
+
+  * {
+    @apply border-brand-gray-200;
+  }
+
+  body {
+    @apply bg-white text-brand-black antialiased;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+      'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-normal tracking-tight;
+  }
+}
+
+@layer components {
+  /* Button Variants - Blue Accent Design with Rounded Corners */
+  .btn {
+    @apply px-6 py-3 font-medium text-sm transition-all duration-300 rounded-lg;
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+  }
+
+  .btn-primary {
+    @apply bg-brand-blue-500 text-white hover:bg-brand-blue-600 focus:ring-brand-blue-500 rounded-lg shadow-sm;
+  }
+
+  .btn-secondary {
+    @apply bg-white text-brand-black border border-brand-gray-300 hover:bg-brand-gray-50 focus:ring-brand-blue-500 rounded-lg shadow-sm;
+  }
+
+  .btn-ghost {
+    @apply bg-transparent text-brand-black hover:bg-brand-gray-100 focus:ring-brand-blue-500 rounded-lg;
+  }
+
+  .btn-outline {
+    @apply bg-transparent text-brand-blue-500 border border-brand-blue-500 hover:bg-brand-blue-50 focus:ring-brand-blue-500 rounded-lg shadow-sm;
+  }
+
+  /* Product Card Component */
+  .product-card {
+    @apply bg-white cursor-pointer transition-all duration-300 rounded-lg overflow-hidden;
+  }
+
+  .product-card:hover {
+    @apply shadow-lg;
+  }
+
+  .product-image {
+    @apply w-full aspect-[3/4] bg-brand-gray-100 overflow-hidden relative rounded-lg;
+  }
+
+  .product-image img {
+    @apply w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 rounded-lg;
+  }
+
+  /* Navigation Component */
+  .nav-link {
+    @apply text-sm font-medium text-brand-black hover:text-brand-gray-600 transition-colors duration-200;
+  }
+
+  .nav-link-active {
+    @apply text-brand-black border-b-2 border-brand-blue-500;
+  }
+
+  /* Announcement Bar */
+  .announcement-bar {
+    @apply bg-brand-blue-100 text-brand-blue-900 text-sm py-2 px-4;
+  }
+
+  /* Quantity Input - Hide spinner controls */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.8s ease-out;
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.8s ease-out forwards;
+    opacity: 0;
+  }
+
+  /* Screen reader only - visually hidden but accessible to assistive technologies */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Line clamp utility */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Animation keyframes */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes menuSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes orderDetailsExpand {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-order-expand {
+  animation: orderDetailsExpand 0.3s ease-out forwards;
+}
+
+@keyframes toastSlideDown {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -20px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.animate-toast-slide-down {
+  animation: toastSlideDown 0.3s ease-out forwards;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+.animate-skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    #f3f4f6 0%,
+    #e5e7eb 20%,
+    #f3f4f6 40%,
+    #f3f4f6 100%
+  );
+  background-size: 1000px 100%;
+  animation: skeleton-shimmer 1.5s infinite;
+}
+
+/* Hide scrollbar for thumbnail carousel */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

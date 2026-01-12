@@ -1,0 +1,150 @@
+'use client'
+
+import { Product } from '../components/ProductListingPage'
+import { CartItem } from '../components/MiniCart'
+
+const CART_KEY = 'marketstreet_cart'
+
+/**
+ * Get all items in the cart from localStorage
+ */
+export function getCart(): CartItem[] {
+  if (typeof window === 'undefined') return []
+  
+  try {
+    const stored = localStorage.getItem(CART_KEY)
+    if (!stored) return []
+    return JSON.parse(stored) as CartItem[]
+  } catch (error) {
+    console.error('Error reading cart:', error)
+    return []
+  }
+}
+
+/**
+ * Get the number of items in the cart
+ */
+export function getCartCount(): number {
+  return getCart().reduce((sum, item) => sum + item.quantity, 0)
+}
+
+/**
+ * Add a product to the cart
+ */
+export function addToCart(
+  product: Product,
+  quantity: number = 1,
+  size?: string,
+  color?: string
+): void {
+  if (typeof window === 'undefined') return
+  
+  try {
+    const current = getCart()
+    const itemId = `${product.id}-${size || 'default'}-${color || 'default'}`
+    
+    // Check if item already exists with same size/color
+    const existingIndex = current.findIndex((item) => item.id === itemId)
+    
+    if (existingIndex >= 0) {
+      // Update quantity of existing item
+      current[existingIndex].quantity += quantity
+    } else {
+      // Add new item
+      const newItem: CartItem = {
+        id: itemId,
+        product,
+        quantity,
+        size,
+        color,
+        price: product.price,
+        originalPrice: product.originalPrice,
+      }
+      current.push(newItem)
+    }
+    
+    localStorage.setItem(CART_KEY, JSON.stringify(current))
+    
+    // Dispatch a custom event so other components can react
+    window.dispatchEvent(new CustomEvent('cartUpdated', { detail: current }))
+    
+    // Dispatch event for add animation with product info
+    const addedItem = existingIndex >= 0 ? current[existingIndex] : current[current.length - 1]
+    window.dispatchEvent(new CustomEvent('itemAddedToCart', { 
+      detail: { 
+        product: product,
+        item: addedItem,
+        isNewItem: existingIndex < 0
+      } 
+    }))
+  } catch (error) {
+    console.error('Error adding to cart:', error)
+  }
+}
+
+/**
+ * Remove a product from the cart
+ */
+export function removeFromCart(itemId: string): void {
+  if (typeof window === 'undefined') return
+  
+  try {
+    const current = getCart()
+    const updated = current.filter((item) => item.id !== itemId)
+    localStorage.setItem(CART_KEY, JSON.stringify(updated))
+    
+    // Dispatch a custom event so other components can react
+    window.dispatchEvent(new CustomEvent('cartUpdated', { detail: updated }))
+  } catch (error) {
+    console.error('Error removing from cart:', error)
+  }
+}
+
+/**
+ * Update the quantity of a cart item
+ */
+export function updateCartQuantity(itemId: string, quantity: number): void {
+  if (typeof window === 'undefined') return
+  
+  try {
+    const current = getCart()
+    const itemIndex = current.findIndex((item) => item.id === itemId)
+    
+    if (itemIndex >= 0) {
+      if (quantity <= 0) {
+        // Remove item if quantity is 0 or less
+        removeFromCart(itemId)
+        return
+      }
+      
+      current[itemIndex].quantity = quantity
+      localStorage.setItem(CART_KEY, JSON.stringify(current))
+      
+      // Dispatch a custom event so other components can react
+      window.dispatchEvent(new CustomEvent('cartUpdated', { detail: current }))
+    }
+  } catch (error) {
+    console.error('Error updating cart quantity:', error)
+  }
+}
+
+/**
+ * Clear the entire cart
+ */
+export function clearCart(): void {
+  if (typeof window === 'undefined') return
+  
+  try {
+    localStorage.removeItem(CART_KEY)
+    window.dispatchEvent(new CustomEvent('cartUpdated', { detail: [] }))
+  } catch (error) {
+    console.error('Error clearing cart:', error)
+  }
+}
+
+/**
+ * Get cart subtotal
+ */
+export function getCartSubtotal(): number {
+  return getCart().reduce((sum, item) => sum + item.price * item.quantity, 0)
+}
