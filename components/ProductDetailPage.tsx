@@ -19,6 +19,7 @@ import SizeGuideModal from './SizeGuideModal'
 import { addToCart } from '../lib/cart'
 import QuickViewModal from './QuickViewModal'
 import NotifyMeModal from './NotifyMeModal'
+import DeliveryEstimates, { DeliveryEstimateState } from './DeliveryEstimates'
 
 // Media item type for gallery
 interface MediaItem {
@@ -267,6 +268,7 @@ export default function ProductDetailPage({
   const [showStoreLocator, setShowStoreLocator] = useState(false)
   const [fulfillmentMethod, setFulfillmentMethod] = useState<'delivery' | 'pickup'>('delivery')
   const [deliveryZipCode, setDeliveryZipCode] = useState('94123')
+  const [deliveryEstimateState, setDeliveryEstimateState] = useState<DeliveryEstimateState | null>(null)
   const [shareSuccess, setShareSuccess] = useState(false)
   const [showPayPalModal, setShowPayPalModal] = useState(false)
   const [showFulfillmentModal, setShowFulfillmentModal] = useState(false)
@@ -1029,19 +1031,12 @@ export default function ProductDetailPage({
                   <div className="flex flex-col">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-xs font-medium text-brand-black">Deliver to</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          // In real app, this would open a zip code modal
-                          const newZip = prompt('Enter zip code:', deliveryZipCode)
-                          if (newZip) setDeliveryZipCode(newZip)
-                        }}
-                        className="text-xs text-brand-blue-500 underline hover:text-brand-blue-600"
-                      >
-                        {deliveryZipCode}
-                      </button>
                     </div>
-                    <p className="text-xs text-brand-gray-600 mt-0.5">3-7 Business days</p>
+                    <p className="text-xs text-brand-gray-600 mt-0.5">
+                      {deliveryEstimateState?.status === 'success' && deliveryEstimateState.result
+                        ? `Delivery in ${deliveryEstimateState.result.deliveryText}`
+                        : 'Enter ZIP code to see delivery estimate'}
+                    </p>
                   </div>
                 </div>
               </button>
@@ -1118,6 +1113,21 @@ export default function ProductDetailPage({
                 </div>
               </button>
             </div>
+
+            {/* Calculate Shipping - Separate Block (only when delivery is selected) */}
+            {fulfillmentMethod === 'delivery' && (
+              <div className="mt-3 p-4 border border-brand-gray-200 rounded-lg bg-white">
+                <DeliveryEstimates
+                  initialZip={deliveryZipCode}
+                  onZipChange={(newZip) => {
+                    setDeliveryZipCode(newZip)
+                  }}
+                  onResultChange={(state) => {
+                    setDeliveryEstimateState(state)
+                  }}
+                />
+              </div>
+            )}
 
             {/* Quantity Selector */}
             <div>
