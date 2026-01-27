@@ -13,6 +13,7 @@ import Toast from './Toast'
 import { getCart, updateCartQuantity, removeFromCart, addToCart } from '../lib/cart'
 import { getAllProducts } from '../lib/products'
 import { logout } from '../lib/auth'
+import { Product } from './ProductListingPage'
 
 interface ExtendedCartItem extends CartItem {
   fulfillmentMethod?: 'pickup' | 'delivery'
@@ -148,6 +149,7 @@ export default function Navigation() {
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [cartItems, setCartItems] = useState<ExtendedCartItem[]>([])
+  const [allProducts, setAllProducts] = useState<Product[]>([])
   const [cartCount, setCartCount] = useState(0)
   const [toastMessage, setToastMessage] = useState<string>('')
   const [showToast, setShowToast] = useState(false)
@@ -216,9 +218,11 @@ export default function Navigation() {
       // Open minicart with animation
       setIsCartOpen(true)
       // Dispatch event with item ID for animation
-      window.dispatchEvent(new CustomEvent('itemAddedToMiniCart', { 
-        detail: { itemId: item.id }
-      }))
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('itemAddedToMiniCart', { 
+          detail: { itemId: item.id }
+        }))
+      }
       // Show brief toast message (minicart will also show the product)
       setToastMessage(`${product.name} added to cart`)
       setShowToast(true)
@@ -251,18 +255,32 @@ export default function Navigation() {
       }
     }
 
-    window.addEventListener('cartUpdated', handleCartUpdate as EventListener)
-    window.addEventListener('itemAddedToCart', handleItemAdded as EventListener)
-    window.addEventListener('minicartHover', handleMinicartHover as EventListener)
+    // Guard for SSR - window not available during server-side rendering
+    if (typeof window !== 'undefined') {
+      window.addEventListener('cartUpdated', handleCartUpdate as EventListener)
+      window.addEventListener('itemAddedToCart', handleItemAdded as EventListener)
+      window.addEventListener('minicartHover', handleMinicartHover as EventListener)
+    }
     
     return () => {
-      window.removeEventListener('cartUpdated', handleCartUpdate as EventListener)
-      window.removeEventListener('itemAddedToCart', handleItemAdded as EventListener)
-      window.removeEventListener('minicartHover', handleMinicartHover as EventListener)
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('cartUpdated', handleCartUpdate as EventListener)
+        window.removeEventListener('itemAddedToCart', handleItemAdded as EventListener)
+        window.removeEventListener('minicartHover', handleMinicartHover as EventListener)
+      }
       if (autoCloseTimeoutRef.current) {
         clearTimeout(autoCloseTimeoutRef.current)
       }
     }
+  }, [])
+
+  // Load products for upsell
+  useEffect(() => {
+    const loadProducts = async () => {
+      const products = await getAllProducts()
+      setAllProducts(products)
+    }
+    loadProducts()
   }, [])
 
   // Clear timeout on unmount
@@ -530,7 +548,9 @@ export default function Navigation() {
         onCheckout={() => {
           setIsCartOpen(false)
           // TODO: Navigate to checkout page
-          window.location.href = '/checkout'
+          if (typeof window !== 'undefined') {
+            window.location.href = '/checkout'
+          }
         }}
         onContinueShopping={() => {
           setIsCartOpen(false)
@@ -538,12 +558,14 @@ export default function Navigation() {
         onViewCart={() => {
           setIsCartOpen(false)
           // TODO: Navigate to full cart page
-          window.location.href = '/cart'
+          if (typeof window !== 'undefined') {
+            window.location.href = '/cart'
+          }
         }}
         onAddUpsellToCart={(product) => {
           addToCart(product, 1)
         }}
-        upsellProduct={getAllProducts().find(p => p.isBestSeller && !cartItems.some(item => item.product.id === p.id))}
+        upsellProduct={allProducts.length > 0 ? allProducts.find(p => p.isBestSeller && !cartItems.some(item => item.product.id === p.id)) : undefined}
         freeShippingThreshold={60}
         onStoreChange={(store) => {
           // Update cart items with new store info

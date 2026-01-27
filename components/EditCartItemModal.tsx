@@ -37,8 +37,16 @@ export default function EditCartItemModal({
   const [selectedColor, setSelectedColor] = useState<string>(currentColor || product.color || product.colors?.[0] || '')
   const [quantity, setQuantity] = useState<number>(currentQuantity)
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
+  const [allProducts, setAllProducts] = useState<Product[]>([])
 
-  const allProducts = getAllProducts()
+  // Load products for variants
+  useEffect(() => {
+    const loadProducts = async () => {
+      const products = await getAllProducts()
+      setAllProducts(products)
+    }
+    loadProducts()
+  }, [])
 
   // Find variant products by matching product name
   const variantProducts = useMemo(() => {

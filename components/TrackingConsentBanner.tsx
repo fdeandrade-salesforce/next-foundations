@@ -6,6 +6,9 @@ export default function TrackingConsentBanner() {
   const [isVisible, setIsVisible] = useState(false)
 
   useEffect(() => {
+    // Guard for SSR - localStorage not available during server-side rendering
+    if (typeof window === 'undefined') return
+
     // Check if user has already responded to tracking consent
     const hasResponded = localStorage.getItem('trackingConsentResponded')
     
@@ -19,20 +22,26 @@ export default function TrackingConsentBanner() {
   }, [])
 
   const handleAccept = () => {
-    localStorage.setItem('trackingConsentResponded', 'accepted')
-    localStorage.setItem('trackingConsent', 'true')
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('trackingConsentResponded', 'accepted')
+      localStorage.setItem('trackingConsent', 'true')
+    }
     setIsVisible(false)
   }
 
   const handleDecline = () => {
-    localStorage.setItem('trackingConsentResponded', 'declined')
-    localStorage.setItem('trackingConsent', 'false')
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('trackingConsentResponded', 'declined')
+      localStorage.setItem('trackingConsent', 'false')
+    }
     setIsVisible(false)
   }
 
   const handleClose = () => {
     // Close and mark as dismissed (won't show again)
-    localStorage.setItem('trackingConsentResponded', 'dismissed')
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('trackingConsentResponded', 'dismissed')
+    }
     setIsVisible(false)
   }
 

@@ -1,15 +1,24 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import Navigation from '../../components/Navigation'
 import ProductListingPage from '../../components/ProductListingPage'
 import Footer from '../../components/Footer'
 import PromoBanner from '../../components/PromoBanner'
 import EditorialCard from '../../components/EditorialCard'
 import { getAllProducts } from '../../lib/products'
+import { Product } from '../../components/ProductListingPage'
 
 export default function ShopPage() {
-  const products = getAllProducts()
+  const [products, setProducts] = useState<Product[]>([])
+  
+  useEffect(() => {
+    const loadProducts = async () => {
+      const allProducts = await getAllProducts()
+      setProducts(allProducts)
+    }
+    loadProducts()
+  }, [])
 
   // Example content blocks to insert in the product grid
   const contentSlots = {

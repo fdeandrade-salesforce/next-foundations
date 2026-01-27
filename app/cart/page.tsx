@@ -50,16 +50,9 @@ interface Store {
   zip: string
 }
 
-const mockStores: Store[] = [
-  {
-    id: 'somerville-square',
-    name: 'Somerville Square',
-    address: '478 Artisan Way',
-    city: 'Somerville',
-    state: 'MA',
-    zip: '02145',
-  },
-]
+// Store data is now loaded from repository when needed
+// See /src/data/mock/stores.ts for the store data
+// This interface is kept for backward compatibility with cart logic
 
 export default function CartPage() {
   const [cartItems, setCartItems] = useState<ExtendedCartItem[]>([])

@@ -19,36 +19,44 @@ export default function ProductPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const foundProduct = getProductById(productId)
-    const products = getAllProducts()
-    setAllProducts(products)
-    
-    if (foundProduct) {
-      setProduct(foundProduct)
-      
-      // Get suggested products (same category, different product)
-      const suggested = products
-        .filter(p => p.category === foundProduct.category && p.id !== foundProduct.id)
-        .slice(0, 8)
-      setSuggestedProducts(suggested)
-      
-      // Get recently viewed products (excluding current product)
-      const recentProducts = getRecentlyViewedExcluding(productId).slice(0, 5)
-      
-      // If not enough recently viewed, add some random products to fill
-      if (recentProducts.length < 5) {
-        const additionalProducts = products
-          .filter(p => p.id !== foundProduct.id && !recentProducts.find(rp => rp.id === p.id))
-          .slice(0, 5 - recentProducts.length)
-        recentProducts.push(...additionalProducts)
+    const loadProduct = async () => {
+      try {
+        const foundProduct = await getProductById(productId)
+        const products = await getAllProducts()
+        setAllProducts(products)
+        
+        if (foundProduct) {
+          setProduct(foundProduct)
+          
+          // Get suggested products (same category, different product)
+          const suggested = products
+            .filter(p => p.category === foundProduct.category && p.id !== foundProduct.id)
+            .slice(0, 8)
+          setSuggestedProducts(suggested)
+          
+          // Get recently viewed products (excluding current product)
+          const recentProducts = getRecentlyViewedExcluding(productId).slice(0, 5)
+          
+          // If not enough recently viewed, add some random products to fill
+          if (recentProducts.length < 5) {
+            const additionalProducts = products
+              .filter(p => p.id !== foundProduct.id && !recentProducts.find(rp => rp.id === p.id))
+              .slice(0, 5 - recentProducts.length)
+            recentProducts.push(...additionalProducts)
+          }
+          setRecentlyViewed(recentProducts)
+          
+          // Add current product to recently viewed list
+          addToRecentlyViewed(foundProduct)
+        }
+      } catch (error) {
+        console.error('Error loading product:', error)
+      } finally {
+        setLoading(false)
       }
-      setRecentlyViewed(recentProducts)
-      
-      // Add current product to recently viewed list
-      addToRecentlyViewed(foundProduct)
     }
     
-    setLoading(false)
+    loadProduct()
   }, [productId])
 
   if (loading) {

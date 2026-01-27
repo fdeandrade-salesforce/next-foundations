@@ -118,6 +118,7 @@ export default function ReviewSection({
     recommend: true,
   })
   const [submitSuccess, setSubmitSuccess] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(false)
 
   // Calculate rating distribution
   const ratingDistribution = useMemo(() => {
@@ -209,29 +210,42 @@ export default function ReviewSection({
 
   return (
     <div className="mt-16 pt-16 border-t border-brand-gray-200">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-        <div>
+      {/* Collapsible Header */}
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center justify-between mb-8 hover:opacity-80 transition-opacity"
+      >
+        <div className="text-left">
           <h2 className="text-2xl font-medium text-brand-black">Customer Reviews</h2>
           <p className="text-sm text-brand-gray-600 mt-1">
             {totalReviews} reviews for {productName}
           </p>
         </div>
-        <button
-          onClick={() => setShowWriteReview(true)}
-          className="px-6 py-3 bg-brand-blue-500 text-white font-medium rounded-lg hover:bg-brand-blue-600 transition-colors"
+        <svg
+          className={`w-5 h-5 text-brand-gray-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
         >
-          Write a Review
-        </button>
-      </div>
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {/* Collapsible Content */}
+      {isExpanded && (
+        <>
 
       {/* Success Message */}
       {submitSuccess && (
-        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3">
-          <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-          <p className="text-sm text-green-800">Thank you! Your review has been submitted successfully.</p>
+        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+          <div className="flex items-start gap-3">
+            <div className="w-5 h-5 bg-green-600 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <p className="text-sm text-brand-gray-700">Thank you! Your review has been submitted successfully.</p>
+          </div>
         </div>
       )}
 
@@ -267,19 +281,55 @@ export default function ReviewSection({
       </div>
 
       {/* Filters & Sort */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
-        {/* Search */}
-        <div className="flex-1 relative">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-brand-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search reviews..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-brand-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue-500 text-sm"
-          />
+      <div className="mb-6">
+        {/* Search, Sort, and Button - Responsive Layout */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 mb-4">
+          {/* Search - Full Width on Mobile, Fill on Desktop */}
+          <div className="relative flex-1 w-full">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-brand-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search reviews..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-brand-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue-500 text-sm"
+            />
+          </div>
+
+          {/* Sort By and Button Row - Second Line on Mobile */}
+          <div className="flex items-center gap-4 flex-shrink-0">
+            {/* Sort By - Hug */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <label className="text-sm text-brand-gray-600 whitespace-nowrap">Sort by:</label>
+              <div className="relative">
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                  className="appearance-none px-3 py-2 pr-8 border border-brand-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue-500 text-sm bg-white cursor-pointer"
+                >
+                  <option value="newest">Most Recent</option>
+                  <option value="highest">Highest Rated</option>
+                  <option value="lowest">Lowest Rated</option>
+                  <option value="helpful">Most Helpful</option>
+                </select>
+                <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                  <svg className="w-4 h-4 text-brand-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            {/* Write Review Button - Hug */}
+            <button
+              onClick={() => setShowWriteReview(true)}
+              className="px-6 py-3 bg-brand-blue-500 text-white font-medium rounded-lg hover:bg-brand-blue-600 transition-colors flex-shrink-0 whitespace-nowrap"
+            >
+              Write a Review
+            </button>
+          </div>
         </div>
 
         {/* Filter Tags */}
@@ -296,18 +346,6 @@ export default function ReviewSection({
             </button>
           )}
         </div>
-
-        {/* Sort */}
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-          className="px-4 py-2 border border-brand-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue-500 text-sm bg-white"
-        >
-          <option value="newest">Most Recent</option>
-          <option value="highest">Highest Rated</option>
-          <option value="lowest">Lowest Rated</option>
-          <option value="helpful">Most Helpful</option>
-        </select>
       </div>
 
       {/* Active Filters Summary */}
@@ -589,6 +627,8 @@ export default function ReviewSection({
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   )

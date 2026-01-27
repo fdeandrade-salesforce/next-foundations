@@ -14,11 +14,27 @@ import { toggleWishlist, getWishlistIds } from '../lib/wishlist'
 import { addToCart } from '../lib/cart'
 
 export default function Home() {
-  const featuredProducts = getFeaturedProducts()
-  const newArrivals = getNewArrivals()
+  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([])
+  const [newArrivals, setNewArrivals] = useState<Product[]>([])
+  const [allProducts, setAllProducts] = useState<Product[]>([])
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null)
   const [notifyMeProduct, setNotifyMeProduct] = useState<Product | null>(null)
   const [wishlistIds, setWishlistIds] = useState<string[]>([])
+
+  // Load products on mount
+  useEffect(() => {
+    const loadProducts = async () => {
+      const [featured, newArr, all] = await Promise.all([
+        getFeaturedProducts(),
+        getNewArrivals(),
+        getAllProducts(),
+      ])
+      setFeaturedProducts(featured)
+      setNewArrivals(newArr)
+      setAllProducts(all)
+    }
+    loadProducts()
+  }, [])
 
   // Load wishlist on mount and listen for updates
   useEffect(() => {
@@ -164,7 +180,7 @@ export default function Home() {
       {quickViewProduct && (
         <QuickViewModal
           product={quickViewProduct}
-          allProducts={getAllProducts()}
+          allProducts={allProducts}
           isOpen={!!quickViewProduct}
           onClose={() => setQuickViewProduct(null)}
           onAddToCart={handleAddToCart}

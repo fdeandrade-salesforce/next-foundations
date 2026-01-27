@@ -9,6 +9,7 @@ import Footer from './Footer'
 import AnnouncementBar from './AnnouncementBar'
 import ImageZoom from './ImageZoom'
 import ReviewSection from './ReviewSection'
+import QASection from './QASection'
 import StoreLocatorModal from './StoreLocatorModal'
 import LazyImage from './LazyImage'
 import Model3DViewer from './Model3DViewer'
@@ -20,6 +21,7 @@ import { addToCart } from '../lib/cart'
 import QuickViewModal from './QuickViewModal'
 import NotifyMeModal from './NotifyMeModal'
 import DeliveryEstimates, { DeliveryEstimateState } from './DeliveryEstimates'
+import { getReviewRepo } from '../src/data'
 
 // Media item type for gallery
 interface MediaItem {
@@ -65,89 +67,9 @@ interface ProductDetailPageProps {
   allProducts?: Product[]
 }
 
-// Mock reviews data
-const mockReviews: Review[] = [
-  {
-    id: '1',
-    author: 'Name A.',
-    rating: 5,
-    date: 'June 2022',
-    title: 'Excellent quality',
-    content: 'Absolutely love this product! The quality is outstanding and it looks even better in person. Highly recommend to anyone looking for premium design.',
-    verified: true,
-    helpful: 24,
-  },
-  {
-    id: '2',
-    author: 'Sarah M.',
-    rating: 4,
-    date: 'May 2022',
-    title: 'Great design',
-    content: 'Beautiful geometric form that fits perfectly in my living space. The craftsmanship is impeccable. Only giving 4 stars because shipping took a bit longer than expected.',
-    verified: true,
-    helpful: 18,
-  },
-  {
-    id: '3',
-    author: 'John D.',
-    rating: 5,
-    date: 'April 2022',
-    title: 'Perfect addition',
-    content: 'Exactly what I was looking for. The minimalist design adds elegance to any room. Worth every penny!',
-    verified: false,
-    helpful: 12,
-  },
-  {
-    id: '4',
-    author: 'Emily R.',
-    rating: 5,
-    date: 'March 2022',
-    title: 'Stunning piece',
-    content: 'This exceeded my expectations. The attention to detail is remarkable and it photographs beautifully. Already planning to buy more from this collection.',
-    verified: true,
-    helpful: 31,
-  },
-  {
-    id: '5',
-    author: 'Michael T.',
-    rating: 3,
-    date: 'February 2022',
-    title: 'Good but pricey',
-    content: 'Nice quality overall but I expected more for the price. The finish could be smoother in some areas.',
-    verified: true,
-    helpful: 8,
-  },
-  {
-    id: '6',
-    author: 'Lisa K.',
-    rating: 5,
-    date: 'January 2022',
-    title: 'Love it!',
-    content: 'Perfect for my modern apartment. Gets compliments from everyone who visits. The size is just right.',
-    verified: true,
-    helpful: 15,
-  },
-  {
-    id: '7',
-    author: 'David W.',
-    rating: 4,
-    date: 'December 2021',
-    title: 'Solid purchase',
-    content: 'Well made and looks great. Packaging was excellent and it arrived without any damage.',
-    verified: false,
-    helpful: 6,
-  },
-  {
-    id: '8',
-    author: 'Anna P.',
-    rating: 2,
-    date: 'November 2021',
-    title: 'Not as expected',
-    content: 'The color was slightly different from the photos. Otherwise the quality is decent.',
-    verified: true,
-    helpful: 4,
-  },
-]
+// Reviews are now loaded from the data layer via repository
+// The data is centralized in /src/data/mock/reviews.ts
+// Reviews are loaded asynchronously via getReviewRepo() when needed
 
 // Accordion Component
 function Accordion({ 
@@ -220,10 +142,40 @@ export default function ProductDetailPage({
   product,
   suggestedProducts = [],
   recentlyViewed = [],
-  reviews = mockReviews,
+  reviews: reviewsProp,
   allProducts = [],
 }: ProductDetailPageProps) {
   const router = useRouter()
+  const [reviews, setReviews] = useState<Review[]>(reviewsProp || [])
+  
+  // Load reviews from repository if not provided
+  useEffect(() => {
+    if (!reviewsProp) {
+      const loadReviews = async () => {
+        try {
+          const reviewRepo = getReviewRepo()
+          const productReviews = await reviewRepo.getProductReviews(product.id)
+          // Map repository reviews to local Review interface (remove productId for compatibility)
+          const mappedReviews: Review[] = productReviews.map((r) => ({
+            id: r.id,
+            author: r.author,
+            rating: r.rating,
+            date: r.date,
+            title: r.title,
+            content: r.content,
+            verified: r.verified,
+            helpful: r.helpful,
+            images: r.images,
+          }))
+          setReviews(mappedReviews)
+        } catch (error) {
+          console.error('Error loading reviews:', error)
+          setReviews([])
+        }
+      }
+      loadReviews()
+    }
+  }, [product.id, reviewsProp])
   const [selectedSize, setSelectedSize] = useState<string>(product.size?.[0] || '')
   const [selectedColor, setSelectedColor] = useState<string>(product.color || product.colors?.[0] || '')
   const [selectedScent, setSelectedScent] = useState<string>(product.scents?.[0] || '')
@@ -231,7 +183,7 @@ export default function ProductDetailPage({
   const [quantity, setQuantity] = useState(1)
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   
-  // Find variant products by matching product name (same logic as QuickViewModal)
+  // Find variant products by matching product name (same logic as ProductCard)
   const variantProducts = useMemo(() => {
     if (!allProducts.length || !product.colors || product.colors.length <= 1) {
       return {}
@@ -239,17 +191,18 @@ export default function ProductDetailPage({
     
     const variants: Record<string, Product> = {}
     
-    // Find products with the same base name but different colors
-    const baseName = product.name.replace(/\s+(White|Black|Gray|Charcoal|Silver|Ivory|Natural|Ware)$/i, '')
-    
+    // Find products with the same name but different colors
     allProducts.forEach((p) => {
-      if (p.color && p.name.startsWith(baseName)) {
+      if (p.name === product.name && p.color && product.colors?.includes(p.color)) {
         variants[p.color] = p
       }
     })
     
     return variants
-  }, [allProducts, product])
+  }, [allProducts, product.name, product.colors])
+  
+  // Track if user has explicitly selected a color (different from initial)
+  const [hasSelectedColor, setHasSelectedColor] = useState(false)
   
   // Get current variant based on selected color
   const currentVariant = useMemo(() => {
@@ -258,6 +211,45 @@ export default function ProductDetailPage({
     }
     return product
   }, [selectedColor, variantProducts, product])
+  
+  // Track when user selects a color
+  useEffect(() => {
+    if (selectedColor && selectedColor !== (product.color || product.colors?.[0])) {
+      setHasSelectedColor(true)
+    }
+  }, [selectedColor, product.color, product.colors])
+  
+  // Calculate price range across all variants
+  const priceRange = useMemo(() => {
+    if (!product.colors || product.colors.length <= 1) {
+      return null
+    }
+
+    // Collect all variant prices
+    const prices: Set<number> = new Set()
+    
+    // Add price for each color variant
+    product.colors.forEach((color) => {
+      const variantProduct = variantProducts[color]
+      if (variantProduct && variantProduct.price) {
+        prices.add(variantProduct.price)
+      } else {
+        // If no variant product exists for this color, use base product price
+        prices.add(product.price)
+      }
+    })
+
+    const priceArray = Array.from(prices)
+    const minPrice = Math.min(...priceArray)
+    const maxPrice = Math.max(...priceArray)
+
+    // Return range only if prices differ
+    if (minPrice !== maxPrice) {
+      return { min: minPrice, max: maxPrice }
+    }
+
+    return null
+  }, [product, variantProducts])
   
   // Reset image index when variant changes
   useEffect(() => {
@@ -815,18 +807,28 @@ export default function ProductDetailPage({
             <div className="space-y-3">
               {/* Price */}
               <div className="flex items-center gap-3">
-                <span className="text-2xl font-semibold text-brand-black">
-                  ${currentVariant.price.toFixed(2)}
-                </span>
-                {hasDiscount && (
+                {/* Show price range only on initial load (no color selection made yet) */}
+                {/* Show individual variant price when any color is selected */}
+                {priceRange && !hasSelectedColor ? (
+                  <span className="text-2xl font-semibold text-brand-black">
+                    ${priceRange.min.toFixed(2)} - ${priceRange.max.toFixed(2)}
+                  </span>
+                ) : (
                   <>
-                    <span className="text-base text-brand-gray-400 line-through">
-                      ${currentVariant.originalPrice!.toFixed(2)}
+                    <span className="text-2xl font-semibold text-brand-black">
+                      ${currentVariant.price.toFixed(2)}
                     </span>
-                    {percentOffBadge !== null && percentOffBadge !== undefined && (
-                      <span className="px-2 py-0.5 bg-brand-blue-100 text-brand-blue-700 text-xs font-medium rounded-md">
-                        Save {percentOffBadge}%
-                      </span>
+                    {hasDiscount && currentVariant.originalPrice && (
+                      <>
+                        <span className="text-base text-brand-gray-400 line-through">
+                          ${currentVariant.originalPrice.toFixed(2)}
+                        </span>
+                        {percentOffBadge !== null && percentOffBadge !== undefined && (
+                          <span className="px-2 py-0.5 bg-brand-blue-100 text-brand-blue-700 text-xs font-medium rounded-md">
+                            Save {percentOffBadge}%
+                          </span>
+                        )}
+                      </>
                     )}
                   </>
                 )}
@@ -920,6 +922,7 @@ export default function ProductDetailPage({
                             router.push(`/product/${variantProduct.id}`)
                           } else {
                             setSelectedColor(color)
+                            setHasSelectedColor(true)
                           }
                         }}
                         className={`px-3 py-2 text-sm border transition-colors rounded-lg capitalize ${
@@ -1365,6 +1368,19 @@ export default function ProductDetailPage({
               </div>
             </Accordion>
           </div>
+        </div>
+
+        {/* Q&A Section */}
+        <div id="qa-section">
+          <QASection
+            productId={currentVariant.id}
+            productName={currentVariant.name}
+            productCategory={product.category}
+            productSubcategory={product.subcategory}
+            productBrand={product.brand}
+            hasSizes={!!(product.size && product.size.length > 0)}
+            hasColors={!!(product.colors && product.colors.length > 0)}
+          />
         </div>
 
         {/* Reviews Section */}

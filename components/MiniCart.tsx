@@ -93,10 +93,21 @@ export default function MiniCart({
   const deliveryItems = items.filter(item => item.fulfillmentMethod === 'delivery')
   const selectedStoreId = pickupItems.length > 0 ? pickupItems[0]?.storeId : '1'
 
+  const [allProducts, setAllProducts] = useState<Product[]>([])
+  
+  // Load products for upsell
+  useEffect(() => {
+    const loadProducts = async () => {
+      const products = await getAllProducts()
+      setAllProducts(products)
+    }
+    loadProducts()
+  }, [])
+
   // Get upsell products (exclude items already in cart)
   const cartProductIds = items.map(item => item.product.id)
-  const upsellProducts = upsellProduct 
-    ? getAllProducts()
+  const upsellProducts = upsellProduct && allProducts.length > 0
+    ? allProducts
         .filter(p => !cartProductIds.includes(p.id))
         .slice(0, 5)
     : []

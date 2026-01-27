@@ -1,70 +1,10 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { getStoreRepo } from '../src/data'
 
-// Mock store data
-const mockStores = [
-  {
-    id: '1',
-    name: 'Dorchester',
-    address: '26 District Avenue, Dorchester, MA 02125',
-    distance: 0.0,
-    hours: 'Open 24 hours',
-    status: 'open' as const,
-    hasProduct: true,
-    pickupTime: 'Ready in 1 hour',
-  },
-  {
-    id: '2',
-    name: 'Somerville Square',
-    address: '478 Artisan Way, Somerville, MA 02145',
-    distance: 3.1,
-    hours: 'Closing soon – 11 PM',
-    status: 'closing-soon' as const,
-    hasProduct: true,
-    pickupTime: 'Ready in 2 hours',
-  },
-  {
-    id: '3',
-    name: 'The Arsenal',
-    address: '550 Arsenal St., Watertown, MA 02472',
-    distance: 6.0,
-    hours: 'Closed',
-    status: 'closed' as const,
-    hasProduct: true,
-    pickupTime: 'Ready tomorrow at 10 AM',
-  },
-  {
-    id: '4',
-    name: 'Store 363 - Somerville Square',
-    address: '478 Artisan Way, Somerville, MA 02145',
-    distance: 6.0,
-    hours: 'Closing soon – 11 PM',
-    status: 'closing-soon' as const,
-    hasProduct: false,
-    pickupTime: null,
-  },
-  {
-    id: '5',
-    name: 'Store 408 - The Arsenal',
-    address: '26 District Avenue, Dorchester, MA 02125',
-    distance: 6.0,
-    hours: 'Closing soon – 11 PM',
-    status: 'closing-soon' as const,
-    hasProduct: true,
-    pickupTime: 'Ready in 3 hours',
-  },
-  {
-    id: '6',
-    name: 'Cambridge Galleria',
-    address: '100 CambridgeSide Place, Cambridge, MA 02141',
-    distance: 8.2,
-    hours: 'Open until 9 PM',
-    status: 'open' as const,
-    hasProduct: true,
-    pickupTime: 'Ready in 1 hour',
-  },
-]
+// Store data is now loaded from repository
+// See /src/data/mock/stores.ts for the store data
 
 interface Store {
   id: string
@@ -95,6 +35,54 @@ export default function StoreLocatorModal({
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedStore, setSelectedStore] = useState<string>(selectedStoreId || '')
   const [showStoreHours, setShowStoreHours] = useState<string | null>(null)
+  const [stores, setStores] = useState<Store[]>([])
+  const [loading, setLoading] = useState(true)
+
+  // Load stores from repository
+  useEffect(() => {
+    const loadStores = async () => {
+      try {
+        const storeRepo = getStoreRepo()
+        const repoStores = await storeRepo.getAllStores()
+        
+        // Map repository stores to modal's Store format
+        const mappedStores: Store[] = repoStores.map((repoStore) => {
+          // Determine status from isOpen and hours
+          let status: 'open' | 'closed' | 'closing-soon' = 'open'
+          if (!repoStore.isOpen) {
+            status = 'closed'
+          } else if (repoStore.hours?.toLowerCase().includes('closing soon')) {
+            status = 'closing-soon'
+          }
+          
+          // Build full address string
+          const fullAddress = `${repoStore.address}, ${repoStore.city}, ${repoStore.state} ${repoStore.zipCode}`
+          
+          return {
+            id: repoStore.id,
+            name: repoStore.name,
+            address: fullAddress,
+            distance: repoStore.distance || 0,
+            hours: repoStore.hours || 'Hours not available',
+            status,
+            hasProduct: true, // Default to true - in production this would come from inventory check
+            pickupTime: repoStore.pickupTime || 'Ready in 2 hours',
+          }
+        })
+        
+        setStores(mappedStores)
+      } catch (error) {
+        console.error('Error loading stores:', error)
+        setStores([])
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    if (isOpen) {
+      loadStores()
+    }
+  }, [isOpen])
 
   if (!isOpen) return null
 
@@ -120,12 +108,12 @@ export default function StoreLocatorModal({
   }
 
   const filteredStores = searchQuery
-    ? mockStores.filter(
+    ? stores.filter(
         (store) =>
           store.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           store.address.toLowerCase().includes(searchQuery.toLowerCase())
       )
-    : mockStores
+    : stores
 
   const availableStores = filteredStores.filter((store) => store.hasProduct)
   const unavailableStores = filteredStores.filter((store) => !store.hasProduct)
@@ -336,8 +324,16 @@ export default function StoreLocatorModal({
               </div>
             )}
 
+            {/* Loading State */}
+            {loading && (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-blue-500 mx-auto mb-4"></div>
+                <p className="text-brand-gray-600 font-medium">Loading stores...</p>
+              </div>
+            )}
+
             {/* No Results */}
-            {filteredStores.length === 0 && (
+            {!loading && filteredStores.length === 0 && (
               <div className="text-center py-8">
                 <svg className="w-12 h-12 mx-auto text-brand-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />

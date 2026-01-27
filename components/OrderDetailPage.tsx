@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import Navigation from './Navigation'
@@ -87,6 +87,21 @@ export default function OrderDetailPage({ order }: OrderDetailPageProps) {
   const [showTrackingDropdown, setShowTrackingDropdown] = useState(false)
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null)
   const [notifyMeProduct, setNotifyMeProduct] = useState<Product | null>(null)
+  const [suggestedProducts, setSuggestedProducts] = useState<Product[]>([])
+  const [allProducts, setAllProducts] = useState<Product[]>([])
+
+  // Load products
+  useEffect(() => {
+    const loadProducts = async () => {
+      const [featured, all] = await Promise.all([
+        getFeaturedProducts(),
+        getAllProducts(),
+      ])
+      setSuggestedProducts(featured.slice(0, 4))
+      setAllProducts(all)
+    }
+    loadProducts()
+  }, [])
 
   // Safety check - if order is invalid, show error (after hooks)
   if (!order || !order.orderNumber) {
@@ -107,9 +122,6 @@ export default function OrderDetailPage({ order }: OrderDetailPageProps) {
     console.log('Email signup:', email)
     setEmail('')
   }
-
-  // Get suggested products
-  const suggestedProducts: Product[] = getFeaturedProducts().slice(0, 4)
 
   // Helper function to check if product has variants
   const hasVariants = (product: Product): boolean => {
@@ -796,7 +808,7 @@ export default function OrderDetailPage({ order }: OrderDetailPageProps) {
       {quickViewProduct && (
         <QuickViewModal
           product={quickViewProduct}
-          allProducts={getAllProducts()}
+          allProducts={allProducts}
           isOpen={!!quickViewProduct}
           onClose={() => setQuickViewProduct(null)}
           onAddToCart={(product, size, color) => addToCart(product, 1, size, color)}

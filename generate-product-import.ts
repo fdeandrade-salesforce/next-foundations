@@ -19,10 +19,12 @@ try {
   console.log('Could not read sample file, will use default structure:', error.message);
 }
 
-// Get all products
-const products = getAllProducts();
+// Main async function
+async function generateImport() {
+  // Get all products
+  const products = await getAllProducts();
 
-// Define headers matching sample structure + Market Street specific fields
+  // Define headers matching sample structure + Market Street specific fields
 const headers = [
   'Product Name',
   'Product Description',
@@ -76,8 +78,8 @@ const headers = [
   'Slug en_US'
 ];
 
-// Convert products to rows matching sample structure
-const rows = products.map(product => {
+  // Convert products to rows matching sample structure
+  const rows = products.map(product => {
   // Generate slug from product name and color
   const slugBase = product.name.toLowerCase().replace(/\s+/g, '-');
   const slug = product.color 
@@ -153,11 +155,11 @@ const rows = products.map(product => {
   };
 });
 
-// Create workbook and worksheet
-const worksheet = XLSX.utils.json_to_sheet(rows, { header: headers });
+  // Create workbook and worksheet
+  const worksheet = XLSX.utils.json_to_sheet(rows, { header: headers });
 
-// Set column widths for better readability
-const columnWidths = headers.map((header, index) => {
+  // Set column widths for better readability
+  const columnWidths = headers.map((header, index) => {
   // Set appropriate widths based on header type
   if (header.includes('Media') || header.includes('URL') || header.includes('Description')) {
     return { wch: 50 };
@@ -180,21 +182,25 @@ const columnWidths = headers.map((header, index) => {
   if (header.includes('Available') || header.includes('Variation')) {
     return { wch: 25 };
   }
-  // Default width
-  return { wch: 15 };
-});
-worksheet['!cols'] = columnWidths;
+    // Default width
+    return { wch: 15 };
+  });
+  worksheet['!cols'] = columnWidths;
 
-const workbook = XLSX.utils.book_new();
-XLSX.utils.book_append_sheet(workbook, worksheet, 'Products');
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Products');
 
-// Write to file
-const outputFile = path.join(__dirname, 'market-street-product-import.xlsx');
-XLSX.writeFile(workbook, outputFile);
+  // Write to file
+  const outputFile = path.join(__dirname, 'market-street-product-import.xlsx');
+  XLSX.writeFile(workbook, outputFile);
 
-console.log(`\n✅ Successfully generated ${outputFile}`);
-console.log(`📊 Total products exported: ${products.length}`);
-console.log(`\nProducts included:`);
-products.forEach((p, i) => {
-  console.log(`  ${i + 1}. ${p.name}${p.color ? ` (${p.color})` : ''} - $${p.price} - SKU: ${p.sku || 'N/A'}`);
-});
+  console.log(`\n✅ Successfully generated ${outputFile}`);
+  console.log(`📊 Total products exported: ${products.length}`);
+  console.log(`\nProducts included:`);
+  products.forEach((p, i) => {
+    console.log(`  ${i + 1}. ${p.name}${p.color ? ` (${p.color})` : ''} - $${p.price} - SKU: ${p.sku || 'N/A'}`);
+  });
+}
+
+// Run the async function
+generateImport().catch(console.error);

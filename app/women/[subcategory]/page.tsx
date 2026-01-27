@@ -1,9 +1,12 @@
-import React from 'react'
+'use client'
+
+import React, { useEffect, useState } from 'react'
 import Navigation from '../../../components/Navigation'
 import AnnouncementBar from '../../../components/AnnouncementBar'
 import ProductListingPage from '../../../components/ProductListingPage'
 import Footer from '../../../components/Footer'
 import { getProductsBySubcategory } from '../../../lib/products'
+import { Product } from '../../../components/ProductListingPage'
 
 interface PageProps {
   params: {
@@ -13,7 +16,15 @@ interface PageProps {
 
 export default function WomenSubcategoryPage({ params }: PageProps) {
   const subcategory = params.subcategory
-  const products = getProductsBySubcategory('Women', subcategory)
+  const [products, setProducts] = useState<Product[]>([])
+  
+  useEffect(() => {
+    const loadProducts = async () => {
+      const subcategoryProducts = await getProductsBySubcategory('Women', subcategory)
+      setProducts(subcategoryProducts)
+    }
+    loadProducts()
+  }, [subcategory])
 
   // Capitalize first letter of subcategory
   const formattedSubcategory = subcategory.charAt(0).toUpperCase() + subcategory.slice(1)

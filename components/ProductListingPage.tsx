@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react'
+import React, { useState, useMemo, useEffect, useCallback, useRef, useLayoutEffect } from 'react'
 import ProductCard from './ProductCard'
 import QuickViewModal from './QuickViewModal'
 import LazyImage from './LazyImage'
@@ -44,6 +44,7 @@ interface FilterState {
   sizes: string[]
   colors: string[]
   categories: string[]
+  subcategories: string[]
   inStockOnly: boolean
 }
 
@@ -89,6 +90,7 @@ export default function ProductListingPage({
     sizes: [],
     colors: [],
     categories: [],
+    subcategories: [],
     inStockOnly: false,
   })
   const [currentPage, setCurrentPage] = useState(1)
@@ -101,6 +103,9 @@ export default function ProductListingPage({
     name: string
     address: string
   } | null>(null)
+  const [visibleSubcategoriesCount, setVisibleSubcategoriesCount] = useState<number | null>(null)
+  const subcategoriesContainerRef = useRef<HTMLDivElement>(null)
+  const subcategoryButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
 
   // Safety check for products
   const safeProducts = products || []
@@ -147,6 +152,117 @@ export default function ProductListingPage({
     safeProducts.forEach((p) => categories.add(p.category))
     return Array.from(categories).sort()
   }, [safeProducts])
+
+  // Extract available subcategories from products
+  const availableSubcategories = useMemo(() => {
+    const subcategories = new Set<string>()
+    safeProducts.forEach((p) => {
+      if (p.subcategory) {
+        subcategories.add(p.subcategory)
+      }
+    })
+    return Array.from(subcategories).sort()
+  }, [safeProducts])
+
+  // Calculate visible subcategories based on container width
+  const calculateVisibleSubcategories = useCallback(() => {
+    if (availableSubcategories.length <= 1 || !subcategoriesContainerRef.current) {
+      setVisibleSubcategoriesCount(availableSubcategories.length)
+      return
+    }
+
+    const container = subcategoriesContainerRef.current
+    if (!container) return
+
+    // Get container bounds
+    const containerRect = container.getBoundingClientRect()
+    const containerWidth = containerRect.width
+    const containerLeft = containerRect.left
+    
+    // Only calculate if container has a valid width
+    if (containerWidth <= 0) return
+
+    // Count how many buttons are fully visible within the container bounds
+    let visibleCount = 0
+    
+    for (let i = 0; i < availableSubcategories.length; i++) {
+      const subcat = availableSubcategories[i]
+      const button = subcategoryButtonRefs.current.get(subcat)
+      
+      if (button) {
+        const buttonRect = button.getBoundingClientRect()
+        const buttonRight = buttonRect.right
+        const containerRight = containerLeft + containerWidth
+        
+        // Check if the button's right edge is fully within the container (with a small buffer)
+        if (buttonRight <= containerRight + 1) {
+          visibleCount = i + 1
+        } else {
+          // This button and all subsequent ones are cut off
+          break
+        }
+      }
+    }
+
+    setVisibleSubcategoriesCount(visibleCount > 0 ? visibleCount : 1)
+  }, [availableSubcategories])
+
+  useLayoutEffect(() => {
+    // Reset to show all initially so we can measure
+    setVisibleSubcategoriesCount(null)
+    
+    // Use requestAnimationFrame to ensure layout is complete after showing all
+    const rafId = requestAnimationFrame(() => {
+      // Double RAF to ensure DOM has updated with all visible buttons
+      requestAnimationFrame(() => {
+        calculateVisibleSubcategories()
+      })
+    })
+    return () => cancelAnimationFrame(rafId)
+  }, [calculateVisibleSubcategories, showFilters, cardSize, filters.subcategories])
+
+  // Recalculate on window resize and container size changes
+  useEffect(() => {
+    let resizeTimeout: NodeJS.Timeout | null = null
+    
+    const handleResize = () => {
+      // Debounce resize handling
+      if (resizeTimeout) clearTimeout(resizeTimeout)
+      resizeTimeout = setTimeout(() => {
+        // Reset to show all, then calculate
+        setVisibleSubcategoriesCount(null)
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            calculateVisibleSubcategories()
+          })
+        })
+      }, 50)
+    }
+
+    window.addEventListener('resize', handleResize)
+    
+    // Use ResizeObserver to watch for container size changes (more reliable than window resize)
+    let resizeObserver: ResizeObserver | null = null
+    if (subcategoriesContainerRef.current && typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => {
+        handleResize()
+      })
+      resizeObserver.observe(subcategoriesContainerRef.current)
+    }
+
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      if (resizeTimeout) clearTimeout(resizeTimeout)
+      if (resizeObserver && subcategoriesContainerRef.current) {
+        resizeObserver.unobserve(subcategoriesContainerRef.current)
+      }
+    }
+  }, [calculateVisibleSubcategories])
+
+  // Get visible subcategories
+  const visibleSubcategories = useMemo(() => {
+    return availableSubcategories.slice(0, visibleSubcategoriesCount || availableSubcategories.length)
+  }, [availableSubcategories, visibleSubcategoriesCount])
 
   // Get min and max prices
   const priceRange = useMemo(() => {
@@ -225,6 +341,11 @@ export default function ProductListingPage({
       // Category filter
       if (filters.categories.length > 0) {
         if (!filters.categories.includes(product.category)) return false
+      }
+
+      // Subcategory filter
+      if (filters.subcategories && filters.subcategories.length > 0) {
+        if (!product.subcategory || !filters.subcategories.includes(product.subcategory)) return false
       }
 
       return true
@@ -401,6 +522,7 @@ export default function ProductListingPage({
       sizes: [],
       colors: [],
       categories: [],
+      subcategories: [],
       inStockOnly: false,
     })
   }
@@ -410,12 +532,17 @@ export default function ProductListingPage({
     return filters.priceRange[0] === priceRange[0] && filters.priceRange[1] === priceRange[1]
   }, [filters.priceRange, priceRange])
 
-  const activeFiltersCount =
-    filters.sizes.length +
-    filters.colors.length +
-    filters.categories.length +
-    (filters.inStockOnly ? 1 : 0) +
-    (!isPriceRangeDefault ? 1 : 0)
+  const activeFiltersCount = useMemo(() => {
+    let count = 0
+    if (filters.sizes.length > 0) count += filters.sizes.length
+    if (filters.colors.length > 0) count += filters.colors.length
+    if (filters.categories.length > 0) count += filters.categories.length
+    if (filters.subcategories.length > 0) count += filters.subcategories.length
+    if (filters.inStockOnly) count += 1
+    // Price range is considered active if it's not the full range
+    if (filters.priceRange[0] !== priceRange[0] || filters.priceRange[1] !== priceRange[1]) count += 1
+    return count
+  }, [filters, priceRange])
 
   // Get active filters as chips data
   const activeFilterChips = useMemo(() => {
@@ -564,17 +691,101 @@ export default function ProductListingPage({
         </nav>
 
         {/* Toolbar - Filters and Sort */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 mb-6">
-          {/* Sort and Grid Size Controls - First on mobile, right side on desktop */}
-          <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-3 flex-wrap sm:flex-nowrap order-1 sm:order-2">
+        <div className="flex flex-col gap-3 mb-6">
+          {/* Top Row: Filters, Subcategories, Sort */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            {/* Left Side: Filters Button */}
+            <button
+              onClick={handleToggleFilters}
+              className={`btn flex items-center gap-2 w-full sm:w-auto justify-center sm:justify-start order-2 sm:order-1 ${
+                showFilters 
+                  ? 'btn-primary' 
+                  : 'btn-secondary'
+              }`}
+              aria-label="Toggle filters"
+              aria-expanded={showFilters}
+              aria-pressed={showFilters}
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                />
+              </svg>
+              <span className="uppercase tracking-wide text-sm font-medium">Filters</span>
+              {activeFiltersCount > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[1.5rem] h-5 px-2 bg-brand-blue-500 text-white text-xs font-semibold rounded-full">
+                  {activeFiltersCount}
+                </span>
+              )}
+            </button>
+
+            {/* Center: Subcategories - Only show if there are multiple subcategories */}
+            {availableSubcategories.length > 1 && (
+              <div 
+                ref={subcategoriesContainerRef}
+                className="flex items-center gap-2 flex-nowrap overflow-hidden order-3 sm:order-2 flex-1 min-w-0 justify-center sm:justify-start"
+              >
+                {availableSubcategories.map((subcat, index) => {
+                  const isActive = filters.subcategories.includes(subcat)
+                  const subcatProductCount = safeProducts.filter((p) => p.subcategory === subcat).length
+                  
+                  return (
+                    <button
+                      key={subcat}
+                      ref={(el) => {
+                        if (el) {
+                          subcategoryButtonRefs.current.set(subcat, el)
+                        } else {
+                          subcategoryButtonRefs.current.delete(subcat)
+                        }
+                      }}
+                      onClick={() => {
+                        setFilters((prev) => ({
+                          ...prev,
+                          subcategories: isActive
+                            ? prev.subcategories.filter((s) => s !== subcat)
+                            : [...prev.subcategories, subcat],
+                        }))
+                        setCurrentPage(1)
+                      }}
+                      style={{
+                        visibility: visibleSubcategoriesCount === null || index < visibleSubcategoriesCount ? 'visible' : 'hidden',
+                        position: visibleSubcategoriesCount !== null && index >= visibleSubcategoriesCount ? 'absolute' : 'relative',
+                        pointerEvents: visibleSubcategoriesCount !== null && index >= visibleSubcategoriesCount ? 'none' : 'auto',
+                      }}
+                      className={`px-3 py-1.5 text-sm font-medium rounded-full transition-all whitespace-nowrap flex-shrink-0 ${
+                        isActive
+                          ? 'bg-brand-blue-500 text-white shadow-sm'
+                          : 'bg-brand-gray-100 text-brand-gray-700 hover:bg-brand-gray-200'
+                      }`}
+                      aria-label={`Filter by ${subcat}`}
+                      aria-pressed={isActive}
+                    >
+                      {subcat} {subcatProductCount > 0 && `(${subcatProductCount})`}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Right Side: Sort and Grid Size Controls */}
+            <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-3 flex-wrap sm:flex-nowrap order-1 sm:order-3">
             <label className="text-sm text-brand-gray-600 uppercase tracking-wide whitespace-nowrap">
               Sort by:
             </label>
-            <div className="relative flex-1 sm:flex-initial min-w-[140px] sm:min-w-0">
+            <div className="relative flex-1 sm:flex-initial min-w-[160px]">
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as SortOption)}
-                className="appearance-none border border-brand-gray-300 px-3 sm:px-4 py-2 pr-8 sm:pr-10 text-sm text-brand-black bg-white focus:outline-none focus:ring-2 focus:ring-brand-blue-500 uppercase tracking-wide rounded-lg cursor-pointer w-full"
+                className="appearance-none border border-brand-gray-300 px-3 sm:px-4 py-2 pr-8 sm:pr-10 text-sm text-brand-black bg-white focus:outline-none focus:ring-2 focus:ring-brand-blue-500 uppercase tracking-wide rounded-lg cursor-pointer w-full min-w-[160px]"
               >
                 <option value="relevance">Relevance</option>
                 <option value="newest">Newest</option>
@@ -656,40 +867,7 @@ export default function ProductListingPage({
               </button>
             </div>
           </div>
-
-          {/* Filters Button - Second on mobile, left side on desktop */}
-          <button
-            onClick={handleToggleFilters}
-            className={`btn flex items-center gap-2 w-full sm:w-auto justify-center sm:justify-start order-2 sm:order-1 ${
-              showFilters 
-                ? 'btn-primary' 
-                : 'btn-secondary'
-            }`}
-            aria-label="Toggle filters"
-            aria-expanded={showFilters}
-            aria-pressed={showFilters}
-          >
-            <svg
-              className="w-5 h-5 flex-shrink-0"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
-              />
-            </svg>
-            <span className="text-sm font-medium uppercase tracking-wide whitespace-nowrap">Filters</span>
-            {activeFiltersCount > 0 && (
-              <span className="inline-flex items-center justify-center min-w-[1.5rem] h-5 px-2 bg-brand-blue-500 text-white text-xs font-semibold rounded-full">
-                {activeFiltersCount}
-              </span>
-            )}
-          </button>
+          </div>
         </div>
 
         <div className={`flex flex-col lg:flex-row transition-all duration-300 ${showFilters ? 'gap-8' : 'lg:gap-0'}`}>

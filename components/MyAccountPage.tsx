@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -13,9 +13,12 @@ import { getFeaturedProducts, getAllProducts, getProductById } from '../lib/prod
 import { getWishlist, removeFromWishlist } from '../lib/wishlist'
 import { addToCart } from '../lib/cart'
 import { getCurrentUser, User } from '../lib/auth'
+import { getOrderRepo } from '../src/data'
+import type { Order as RepoOrder } from '../src/types'
 import Toast from './Toast'
 import QuickViewModal from './QuickViewModal'
 import NotifyMeModal from './NotifyMeModal'
+import StoreLocatorModal from './StoreLocatorModal'
 
 interface ShippingGroup {
   groupId: string
@@ -40,6 +43,7 @@ interface Order {
   method: string
   amount: string
   expanded?: boolean
+  orderDate?: string // Date when order was placed (e.g., 'Sep 15, 2024')
   items?: Array<{ 
     image: string
     name: string
@@ -125,6 +129,981 @@ interface Passkey {
   deviceType: 'device' | 'platform'
 }
 
+// Order Detail Content Component for inline display in My Account
+function OrderDetailContent({ orderNumber, showToastMessage }: { orderNumber: string | null, showToastMessage?: (message: string, type?: 'success' | 'error') => void }) {
+  const [order, setOrder] = useState<Order | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const [showTrackShipmentDropdown, setShowTrackShipmentDropdown] = useState(false)
+  const [showReturnItemModal, setShowReturnItemModal] = useState(false)
+  const [showCancelItemModal, setShowCancelItemModal] = useState(false)
+  const [selectedItemForReturn, setSelectedItemForReturn] = useState<{ item: any; orderNumber: string; groupId: string } | null>(null)
+  const [selectedItemForCancel, setSelectedItemForCancel] = useState<{ item: any; orderNumber: string; groupId: string } | null>(null)
+  const [returnReason, setReturnReason] = useState('')
+  const [returnQuantity, setReturnQuantity] = useState(1)
+  const [cancelReason, setCancelReason] = useState('')
+  
+  // Fetch order by number from repository
+  useEffect(() => {
+    if (!orderNumber) {
+      setLoading(false)
+      return
+    }
+    
+    // Fetch order from repository
+    const fetchOrder = async () => {
+      try {
+        const orderRepo = getOrderRepo()
+        const foundOrder = await orderRepo.getOrder(orderNumber)
+        if (foundOrder) {
+          // Map RepoOrder to local Order type
+          const mappedOrder: Order = {
+            orderNumber: foundOrder.orderNumber,
+            status: foundOrder.status,
+            method: foundOrder.method,
+            amount: foundOrder.amount,
+            orderDate: foundOrder.orderDate,
+            items: foundOrder.items.map(item => ({
+              id: item.id,
+              image: item.image,
+              name: item.name,
+              quantity: item.quantity,
+              color: item.color,
+              size: item.size,
+              price: item.price,
+              originalPrice: item.originalPrice,
+              store: item.store,
+              shippingGroup: item.shippingGroup,
+            })),
+            subtotal: foundOrder.subtotal,
+            promotions: foundOrder.promotions,
+            shipping: foundOrder.shipping,
+            tax: foundOrder.tax,
+            total: foundOrder.total,
+            paymentInfo: foundOrder.paymentInfo,
+            shippingAddress: foundOrder.shippingAddress,
+            shippingMethod: foundOrder.shippingMethod,
+            deliveryDate: foundOrder.deliveryDate,
+            trackingNumber: foundOrder.trackingNumber,
+            carrier: foundOrder.carrier,
+            carrierTrackingUrl: foundOrder.carrierTrackingUrl,
+            shippingGroups: foundOrder.shippingGroups,
+            isBOPIS: foundOrder.isBOPIS,
+            pickupLocation: foundOrder.pickupLocation,
+            pickupAddress: foundOrder.pickupAddress,
+            pickupDate: foundOrder.pickupDate,
+            pickupReadyDate: foundOrder.pickupReadyDate,
+            canReturn: foundOrder.canReturn,
+            canCancel: foundOrder.canCancel,
+            returnDeadline: foundOrder.returnDeadline,
+            customerName: foundOrder.customerName,
+            customerEmail: foundOrder.customerEmail,
+          }
+          setOrder(mappedOrder)
+        } else {
+          setOrder(null)
+        }
+      } catch (error) {
+        console.error('Error fetching order:', error)
+        setOrder(null)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    fetchOrder()
+  }, [orderNumber])
+  
+  const toggleGroup = (groupId: string) => {
+    setExpandedGroups(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(groupId)) {
+        newSet.delete(groupId)
+      } else {
+        newSet.add(groupId)
+      }
+      return newSet
+    })
+  }
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+      if (showTrackShipmentDropdown && !target.closest('.track-shipment-dropdown')) {
+        setShowTrackShipmentDropdown(false)
+      }
+    }
+
+    if (showTrackShipmentDropdown) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }
+  }, [showTrackShipmentDropdown])
+  
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-blue-500"></div>
+      </div>
+    )
+  }
+  
+  if (!order) {
+    return (
+      <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-8 text-center">
+        <h2 className="text-xl font-semibold text-brand-black mb-2">Order Not Found</h2>
+        <p className="text-brand-gray-600 mb-4">
+          The order number &quot;{orderNumber}&quot; could not be found.
+        </p>
+        <Link 
+          href="/account/order-history"
+          className="text-brand-blue-500 hover:text-brand-blue-600 font-medium hover:underline"
+        >
+          Return to Order History
+        </Link>
+      </div>
+    )
+  }
+  
+  // Get status badge color
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'Delivered':
+      case 'Picked Up':
+        return 'bg-green-100 text-green-700'
+      case 'Partially Delivered':
+        return 'bg-yellow-100 text-yellow-700'
+      case 'In Transit':
+      case 'Ready for Pickup':
+        return 'bg-blue-100 text-blue-700'
+      case 'Cancelled':
+        return 'bg-red-100 text-red-700'
+      default:
+        return 'bg-gray-100 text-gray-700'
+    }
+  }
+  
+  // Group items by shipping group
+  const getGroupedItems = () => {
+    if (!order.shippingGroups || order.shippingGroups.length === 0) {
+      // No shipping groups - return all items as one group
+      return [{
+        groupId: 'default',
+        status: order.status,
+        items: order.items || [],
+        trackingNumber: order.trackingNumber,
+        carrier: order.carrier,
+        carrierTrackingUrl: order.carrierTrackingUrl,
+        shippingAddress: order.shippingAddress,
+        shippingMethod: order.shippingMethod,
+        deliveryDate: order.deliveryDate,
+        isBOPIS: order.isBOPIS,
+        pickupLocation: order.pickupLocation,
+        pickupAddress: order.pickupAddress,
+        pickupDate: order.pickupDate,
+        pickupReadyDate: order.pickupReadyDate,
+      }]
+    }
+    
+    return order.shippingGroups.map((group, idx) => ({
+      ...group,
+      items: (order.items || []).filter(item => item.shippingGroup === group.groupId),
+      displayIndex: idx + 1,
+    }))
+  }
+  
+  const groupedItems = getGroupedItems()
+  
+  return (
+    <div className="space-y-6">
+      {/* Order Header Card */}
+      <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6 pb-6 border-b border-brand-gray-200">
+          <div>
+            <h1 className="text-2xl font-semibold text-brand-black mb-1">Order Details</h1>
+            <p className="text-base text-brand-gray-600">Order #{order.orderNumber}</p>
+            {order.customerEmail && (
+              <p className="text-sm text-brand-gray-500 mt-1">
+                Confirmation email sent to {order.customerEmail}
+              </p>
+            )}
+          </div>
+          <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold ${getStatusBadge(order.status)}`}>
+            {(order.status === 'Delivered' || order.status === 'Picked Up') && (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+            {order.status}
+          </div>
+        </div>
+        
+        {/* Order Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Items Ordered */}
+          <div className="lg:col-span-2 space-y-4">
+            <h3 className="text-lg font-semibold text-brand-black">Items Ordered</h3>
+            
+            {groupedItems.map((group, groupIdx) => (
+              <div key={group.groupId} className="border border-brand-gray-200 rounded-lg overflow-hidden">
+                {/* Group Header */}
+                <div className="bg-brand-gray-50 px-4 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="font-medium text-brand-black">
+                      {order.isBOPIS 
+                        ? `Pickup at ${group.pickupLocation || 'Store'}`
+                        : `Shipment ${groupIdx + 1}`
+                      }
+                    </span>
+                    {group.shippingAddress && !order.isBOPIS && (
+                      <span className="text-sm text-brand-gray-600 hidden sm:inline">
+                        → {group.shippingAddress?.split(',')[0]}
+                      </span>
+                    )}
+                  </div>
+                  <span className={`text-xs font-semibold px-2 py-1 rounded ${getStatusBadge(group.status)}`}>
+                    {group.status}
+                  </span>
+                </div>
+                
+                {/* Items */}
+                <div className="p-4">
+                  <div className="space-y-3 mb-4">
+                    {group.items.map((item, idx) => {
+                      // Determine if item can be returned (delivered/picked up items)
+                      const canReturnItem = order.canReturn && 
+                        (group.status === 'Delivered' || group.status === 'Picked Up' || order.status === 'Delivered' || order.status === 'Picked Up')
+                      
+                      // Determine if item can be cancelled (not yet delivered/picked up)
+                      const canCancelItem = order.canCancel && 
+                        order.status !== 'Cancelled' && 
+                        group.status !== 'Delivered' && 
+                        group.status !== 'Picked Up' &&
+                        group.status !== 'In Transit'
+                      
+                      return (
+                        <div key={idx} className="flex items-start gap-4 p-4 border border-brand-gray-200 rounded-lg hover:bg-brand-gray-50 transition-colors">
+                          {/* Product Image */}
+                          <div className="flex-shrink-0">
+                            <div className="w-20 h-20 bg-brand-gray-100 rounded-lg overflow-hidden">
+                          <Image
+                            src={item.image}
+                            alt={item.name}
+                            width={80}
+                            height={80}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                          </div>
+                          
+                          {/* Product Details */}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-brand-black mb-1">{item.name}</p>
+                        {(item.color || item.size) && (
+                              <p className="text-xs text-brand-gray-500 mb-1">
+                            {[item.color, item.size].filter(Boolean).join(' / ')}
+                          </p>
+                        )}
+                            {item.quantity && (
+                              <p className="text-xs text-brand-gray-500 mb-2">Quantity: {item.quantity}</p>
+                            )}
+                            
+                            {/* Item Actions */}
+                            {(canReturnItem || canCancelItem) && (
+                              <div className="flex flex-wrap gap-3 mt-2">
+                                {canReturnItem && (
+                                  <button 
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setSelectedItemForReturn({ item, orderNumber: order.orderNumber, groupId: group.groupId })
+                                      setReturnQuantity(item.quantity || 1)
+                                      setReturnReason('')
+                                      setShowReturnItemModal(true)
+                                    }}
+                                    className="text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline font-medium"
+                                  >
+                                    Return Item
+                                  </button>
+                                )}
+                                {canCancelItem && (
+                                  <button 
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setSelectedItemForCancel({ item, orderNumber: order.orderNumber, groupId: group.groupId })
+                                      setCancelReason('')
+                                      setShowCancelItemModal(true)
+                                    }}
+                                    className="text-xs text-red-600 hover:text-red-700 hover:underline font-medium"
+                                  >
+                                    Cancel Item
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          
+                          {/* Price and Buy Again */}
+                          <div className="flex-shrink-0 flex flex-col items-end gap-2">
+                        {item.price !== undefined && (
+                              <div className="text-right">
+                            {item.originalPrice && item.originalPrice > item.price && (
+                                  <p className="text-xs text-brand-gray-400 line-through mb-0.5">
+                                    ${item.originalPrice.toFixed(2)}
+                                  </p>
+                            )}
+                                <p className="text-sm font-semibold text-brand-black">
+                            ${item.price.toFixed(2)}
+                          </p>
+                              </div>
+                        )}
+                            <button className="px-4 py-2 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm whitespace-nowrap">
+                              Buy Again
+                            </button>
+                      </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  
+                  {/* Pickup Information - Always visible for BOPIS orders */}
+                  {order.isBOPIS && (group.pickupLocation || group.pickupAddress || group.pickupDate || group.pickupReadyDate) && (
+                    <div className="border-t border-brand-gray-200 pt-3 mt-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {group.pickupLocation && (
+                              <div className="bg-brand-blue-50 border border-brand-blue-200 rounded-lg p-3">
+                                <p className="text-xs font-medium text-brand-gray-600 mb-1">Pickup Location</p>
+                                <p className="text-sm font-medium text-brand-black">{group.pickupLocation}</p>
+                                {group.pickupAddress && (
+                                  <p className="text-xs text-brand-gray-600 mt-1">{group.pickupAddress}</p>
+                                )}
+                              </div>
+                        )}
+                              {(group.pickupDate || group.pickupReadyDate) && (
+                                <div className="bg-white border border-brand-gray-200 rounded-lg p-3">
+                                  <p className="text-xs font-medium text-brand-gray-600 mb-1">
+                                    {group.status === 'Picked Up' ? 'Picked Up On' : 'Pickup Window'}
+                                  </p>
+                                  <p className="text-sm font-medium text-brand-black">
+                                    {group.pickupDate || group.pickupReadyDate}
+                                  </p>
+                                </div>
+                              )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tracking Info - Always visible (only for non-BOPIS orders) */}
+                  {!order.isBOPIS && (group.trackingNumber || group.carrierTrackingUrl || group.shippingAddress) && (
+                    <div className="border-t border-brand-gray-200 pt-3 mt-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              {group.trackingNumber && (
+                                <div className="bg-brand-blue-50 border border-brand-blue-200 rounded-lg p-3">
+                                  <p className="text-xs font-medium text-brand-gray-600 mb-1">Tracking Number</p>
+                                  <p className="text-sm font-mono font-medium text-brand-black">{group.trackingNumber}</p>
+                                  {group.carrier && (
+                                    <p className="text-xs text-brand-gray-600 mt-1">{group.carrier}</p>
+                                  )}
+                                  {group.carrierTrackingUrl && (
+                                    <a
+                                      href={group.carrierTrackingUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline mt-2"
+                                    >
+                                      Track on {group.carrier || 'carrier'} website
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                      </svg>
+                                    </a>
+                                  )}
+                                </div>
+                              )}
+                        {group.shippingAddress && (
+                              <div className="bg-white border border-brand-gray-200 rounded-lg p-3">
+                                <p className="text-xs font-medium text-brand-gray-600 mb-1">Shipping Address</p>
+                                <p className="text-sm text-brand-black">{group.shippingAddress}</p>
+                                {group.shippingMethod && (
+                                  <p className="text-xs text-brand-gray-500 mt-2">{group.shippingMethod}</p>
+                                )}
+                              </div>
+                          )}
+                        </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          {/* Order Summary */}
+          <div className="lg:sticky lg:top-4 space-y-4 self-start">
+            <h3 className="text-lg font-semibold text-brand-black">Order Summary</h3>
+            <div className="bg-brand-gray-50 rounded-lg p-4 space-y-3">
+              <div className="flex justify-between text-sm">
+                <span className="text-brand-gray-600">Subtotal</span>
+                <span className="text-brand-black">${order.subtotal?.toFixed(2)}</span>
+              </div>
+              {order.promotions !== undefined && order.promotions !== 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-brand-gray-600">Promotions</span>
+                  <span className="text-green-600">-${Math.abs(order.promotions).toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm">
+                <span className="text-brand-gray-600">Shipping</span>
+                <span className="text-brand-black">
+                  {order.shipping === 0 ? '$0.00' : `$${order.shipping?.toFixed(2)}`}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-brand-gray-600">Tax</span>
+                <span className="text-brand-black">${order.tax?.toFixed(2)}</span>
+              </div>
+              <div className="pt-3 border-t border-brand-gray-200">
+                <div className="flex justify-between">
+                  <span className="font-semibold text-brand-black">Total</span>
+                  <span className="font-semibold text-brand-black">${order.total?.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Payment Method */}
+            <div>
+              <h4 className="text-sm font-semibold text-brand-black mb-2">Payment Method</h4>
+              <div className="bg-white border border-brand-gray-200 rounded-lg p-3">
+                <p className="text-sm text-brand-gray-700">{order.paymentInfo}</p>
+              </div>
+            </div>
+            
+            {/* Download Receipt */}
+            <div>
+              <button
+                onClick={() => {
+                  // Handle download receipt - in production this would trigger a PDF download
+                  if (showToastMessage) {
+                    showToastMessage('Receipt download started')
+                  }
+                  // You can implement actual download logic here
+                  // Example: window.open(`/api/receipt/${order.orderNumber}`, '_blank')
+                }}
+                className="w-full px-4 py-2.5 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Download Receipt
+              </button>
+            </div>
+            
+            {/* Track Shipment - Multi-shipment dropdown */}
+            {!order.isBOPIS && groupedItems.length > 1 && groupedItems.some(g => g.carrierTrackingUrl) && (
+              <div className="relative track-shipment-dropdown">
+                <button
+                  onClick={() => setShowTrackShipmentDropdown(!showTrackShipmentDropdown)}
+                  className="w-full px-4 py-2.5 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm flex items-center justify-center gap-2"
+                >
+                  Track Shipment
+                  <svg 
+                    className={`w-4 h-4 transition-transform ${showTrackShipmentDropdown ? 'rotate-180' : ''}`}
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                
+                {showTrackShipmentDropdown && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-brand-gray-200 rounded-lg shadow-lg z-10 overflow-hidden">
+                    {groupedItems.map((group, idx) => {
+                      if (!group.carrierTrackingUrl) return null
+                      
+                      // Extract name from shipping address (first part before comma)
+                      const getRecipientName = (address?: string) => {
+                        if (!address) return `Shipment ${idx + 1}`
+                        const name = address.split(',')[0].trim()
+                        return name || `Shipment ${idx + 1}`
+                      }
+                      
+                      const recipientName = getRecipientName(group.shippingAddress)
+                      
+                      return (
+                        <button
+                          key={group.groupId}
+                          onClick={() => {
+                            if (group.carrierTrackingUrl) {
+                              window.open(group.carrierTrackingUrl, '_blank', 'noopener,noreferrer')
+                            }
+                            setShowTrackShipmentDropdown(false)
+                          }}
+                          className="w-full px-4 py-3 text-left text-sm text-brand-black hover:bg-brand-gray-50 transition-colors border-b border-brand-gray-100 last:border-b-0"
+                        >
+                          <div className="font-medium">{recipientName}</div>
+                          {group.trackingNumber && (
+                            <div className="text-xs text-brand-gray-500 mt-0.5 font-mono">
+                              {group.trackingNumber}
+                            </div>
+                          )}
+                          {group.carrier && (
+                            <div className="text-xs text-brand-gray-500">{group.carrier}</div>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Track Shipment - Single shipment button */}
+            {!order.isBOPIS && groupedItems.length === 1 && groupedItems[0]?.carrierTrackingUrl && (
+                <a
+                href={groupedItems[0].carrierTrackingUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full px-4 py-2.5 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm text-center block"
+                >
+                  Track Shipment
+                </a>
+              )}
+            
+            {/* Return Info */}
+            {order.canReturn && order.returnDeadline && (
+              <div className="text-sm text-brand-gray-600">
+                Eligible for return until {order.returnDeadline}
+              </div>
+              )}
+            </div>
+          </div>
+        
+        {/* Need Help Section - Full Width */}
+        <div className="pt-6 mt-6 border-t border-brand-gray-200">
+          <p className="text-sm font-medium text-brand-black mb-3">Need help?</p>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/faq"
+              className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
+            >
+              FAQ
+            </Link>
+            <Link
+              href="/contact"
+              className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
+            >
+              Contact Us
+            </Link>
+            <Link
+              href="/returns"
+              className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
+            >
+              Return Policy
+            </Link>
+        </div>
+        </div>
+      </div>
+
+      {/* Cross-Sell Component */}
+      <CrossSellSection />
+
+      {/* Return Item Modal */}
+      {showReturnItemModal && selectedItemForReturn && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={() => setShowReturnItemModal(false)}></div>
+            <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              {/* Header */}
+              <div className="sticky top-0 bg-white border-b border-brand-gray-200 px-6 py-4 flex items-center justify-between rounded-t-xl">
+                <h2 className="text-xl font-semibold text-brand-black">Return Item</h2>
+                <button
+                  onClick={() => setShowReturnItemModal(false)}
+                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-6 space-y-6">
+                {/* Order Info */}
+                <div className="p-4 bg-brand-gray-50 rounded-lg">
+                  <p className="text-sm text-brand-gray-600 mb-1">Order Number</p>
+                  <p className="text-base font-semibold text-brand-black">{selectedItemForReturn.orderNumber}</p>
+                </div>
+
+                {/* Item Details */}
+                <div className="flex gap-4 p-4 border border-brand-gray-200 rounded-lg">
+                  <div className="flex-shrink-0">
+                    <div className="w-20 h-20 bg-brand-gray-100 rounded-lg overflow-hidden">
+                      <Image
+                        src={selectedItemForReturn.item.image}
+                        alt={selectedItemForReturn.item.name}
+                        width={80}
+                        height={80}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-brand-black mb-1">{selectedItemForReturn.item.name}</p>
+                    {(selectedItemForReturn.item.color || selectedItemForReturn.item.size) && (
+                      <p className="text-xs text-brand-gray-500 mb-2">
+                        {[selectedItemForReturn.item.color, selectedItemForReturn.item.size].filter(Boolean).join(' / ')}
+                      </p>
+                    )}
+                    {selectedItemForReturn.item.price !== undefined && (
+                      <p className="text-sm font-semibold text-brand-black">${selectedItemForReturn.item.price.toFixed(2)}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Return Quantity */}
+                <div>
+                  <label className="block text-sm font-medium text-brand-black mb-2">
+                    Quantity to Return
+                  </label>
+                  <select
+                    value={returnQuantity}
+                    onChange={(e) => setReturnQuantity(parseInt(e.target.value))}
+                    className="w-full px-4 py-2.5 border border-brand-gray-300 rounded-lg text-brand-black bg-white focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent"
+                  >
+                    {Array.from({ length: selectedItemForReturn.item.quantity || 1 }, (_, i) => i + 1).map((qty) => (
+                      <option key={qty} value={qty}>{qty}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Return Reason */}
+                <div>
+                  <label className="block text-sm font-medium text-brand-black mb-2">
+                    Reason for Return <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={returnReason}
+                    onChange={(e) => setReturnReason(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-brand-gray-300 rounded-lg text-brand-black bg-white focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent"
+                  >
+                    <option value="">Select a reason</option>
+                    <option value="defective">Defective or damaged item</option>
+                    <option value="wrong-item">Wrong item received</option>
+                    <option value="not-as-described">Not as described</option>
+                    <option value="size-fit">Size/fit issue</option>
+                    <option value="changed-mind">Changed my mind</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                {/* Return Instructions */}
+                <div className="p-4 bg-brand-blue-50 border border-brand-blue-200 rounded-lg">
+                  <h3 className="text-sm font-semibold text-brand-black mb-2">Return Instructions</h3>
+                  <ul className="text-sm text-brand-gray-700 space-y-1 list-disc list-inside">
+                    <li>You will receive a prepaid return shipping label via email</li>
+                    <li>Please pack the item securely in its original packaging if possible</li>
+                    <li>Returns must be initiated within 30 days of delivery</li>
+                    <li>Refunds will be processed within 5-7 business days after we receive your return</li>
+                  </ul>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3 pt-4 border-t border-brand-gray-200">
+                  <button
+                    onClick={() => setShowReturnItemModal(false)}
+                    className="flex-1 px-4 py-2.5 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!returnReason) {
+                        if (showToastMessage) {
+                          showToastMessage('Please select a reason for return', 'error')
+                        }
+                        return
+                      }
+                      // Handle return submission
+                      if (showToastMessage) {
+                        showToastMessage(`Return request submitted for ${returnQuantity} item(s)`)
+                      }
+                      setShowReturnItemModal(false)
+                      setSelectedItemForReturn(null)
+                      setReturnReason('')
+                      setReturnQuantity(1)
+                    }}
+                    className="flex-1 px-4 py-2.5 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm"
+                  >
+                    Submit Return Request
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Item Modal */}
+      {showCancelItemModal && selectedItemForCancel && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={() => setShowCancelItemModal(false)}></div>
+            <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              {/* Header */}
+              <div className="sticky top-0 bg-white border-b border-brand-gray-200 px-6 py-4 flex items-center justify-between rounded-t-xl">
+                <h2 className="text-xl font-semibold text-brand-black">Cancel Item</h2>
+                <button
+                  onClick={() => setShowCancelItemModal(false)}
+                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-6 space-y-6">
+                {/* Warning */}
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <div>
+                      <h3 className="text-sm font-semibold text-red-800 mb-1">Are you sure you want to cancel this item?</h3>
+                      <p className="text-sm text-red-700">
+                        This action cannot be undone. If your order has already shipped, you may need to return it instead.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Order Info */}
+                <div className="p-4 bg-brand-gray-50 rounded-lg">
+                  <p className="text-sm text-brand-gray-600 mb-1">Order Number</p>
+                  <p className="text-base font-semibold text-brand-black">{selectedItemForCancel.orderNumber}</p>
+                </div>
+
+                {/* Item Details */}
+                <div className="flex gap-4 p-4 border border-brand-gray-200 rounded-lg">
+                  <div className="flex-shrink-0">
+                    <div className="w-20 h-20 bg-brand-gray-100 rounded-lg overflow-hidden">
+                      <Image
+                        src={selectedItemForCancel.item.image}
+                        alt={selectedItemForCancel.item.name}
+                        width={80}
+                        height={80}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-brand-black mb-1">{selectedItemForCancel.item.name}</p>
+                    {(selectedItemForCancel.item.color || selectedItemForCancel.item.size) && (
+                      <p className="text-xs text-brand-gray-500 mb-2">
+                        {[selectedItemForCancel.item.color, selectedItemForCancel.item.size].filter(Boolean).join(' / ')}
+                      </p>
+                    )}
+                    {selectedItemForCancel.item.quantity && (
+                      <p className="text-xs text-brand-gray-500 mb-1">Quantity: {selectedItemForCancel.item.quantity}</p>
+                    )}
+                    {selectedItemForCancel.item.price !== undefined && (
+                      <p className="text-sm font-semibold text-brand-black">${selectedItemForCancel.item.price.toFixed(2)}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Cancel Reason */}
+                <div>
+                  <label className="block text-sm font-medium text-brand-black mb-2">
+                    Reason for Cancellation <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={cancelReason}
+                    onChange={(e) => setCancelReason(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-brand-gray-300 rounded-lg text-brand-black bg-white focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent"
+                  >
+                    <option value="">Select a reason</option>
+                    <option value="changed-mind">Changed my mind</option>
+                    <option value="found-better-price">Found a better price elsewhere</option>
+                    <option value="no-longer-needed">No longer needed</option>
+                    <option value="shipping-delay">Shipping delay</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                {/* Refund Info */}
+                <div className="p-4 bg-brand-gray-50 border border-brand-gray-200 rounded-lg">
+                  <h3 className="text-sm font-semibold text-brand-black mb-2">Refund Information</h3>
+                  <p className="text-sm text-brand-gray-700">
+                    If your order hasn&apos;t shipped yet, you&apos;ll receive a full refund to your original payment method within 5-7 business days.
+                  </p>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3 pt-4 border-t border-brand-gray-200">
+                  <button
+                    onClick={() => setShowCancelItemModal(false)}
+                    className="flex-1 px-4 py-2.5 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors"
+                  >
+                    Keep Item
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!cancelReason) {
+                        if (showToastMessage) {
+                          showToastMessage('Please select a reason for cancellation', 'error')
+                        }
+                        return
+                      }
+                      // Handle cancellation
+                      if (showToastMessage) {
+                        showToastMessage('Item cancellation request submitted')
+                      }
+                      setShowCancelItemModal(false)
+                      setSelectedItemForCancel(null)
+                      setCancelReason('')
+                    }}
+                    className="flex-1 px-4 py-2.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors shadow-sm"
+                  >
+                    Cancel Item
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Cross-Sell Component for Order Pages
+function CrossSellSection() {
+  const [crossSellProducts, setCrossSellProducts] = useState<Product[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    // Fetch featured products for cross-sell
+    const fetchProducts = async () => {
+      try {
+        const products = await getFeaturedProducts()
+        // Get first 4 products for cross-sell
+        setCrossSellProducts(products.slice(0, 4))
+      } catch (error) {
+        console.error('Error fetching cross-sell products:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchProducts()
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
+        <div className="flex items-center justify-center py-8">
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-brand-blue-500"></div>
+        </div>
+      </div>
+    )
+  }
+
+  if (crossSellProducts.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
+      <h2 className="text-xl font-semibold text-brand-black mb-4">You May Also Like</h2>
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4">
+        {crossSellProducts.map((product) => (
+          <ProductCard
+            key={product.id}
+            product={product}
+            onQuickView={(product) => {
+              // Handle quick view if needed
+              console.log('Quick view:', product)
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function renderIcon(iconName: string) {
+  const iconClass = 'w-5 h-5'
+  switch (iconName) {
+    case 'overview':
+      return (
+        <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+        </svg>
+      )
+    case 'account':
+      return (
+        <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+      )
+    case 'orders':
+      return (
+        <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+        </svg>
+      )
+    case 'wishlist':
+      return (
+        <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+        </svg>
+      )
+    case 'loyalty':
+      return (
+        <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+        </svg>
+      )
+    case 'addresses':
+      return (
+        <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      )
+    case 'store':
+      return (
+        <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+        </svg>
+      )
+    case 'payment':
+      return (
+        <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+        </svg>
+      )
+    case 'passkey':
+      return (
+        <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+        </svg>
+      )
+    case 'logout':
+      return (
+        <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+        </svg>
+      )
+    default:
+      return null
+  }
+}
+
 export default function MyAccountPage() {
   const pathname = usePathname()
   const router = useRouter()
@@ -132,13 +1111,20 @@ export default function MyAccountPage() {
   // Determine active section from URL
   const getActiveSectionFromPath = () => {
     if (pathname?.includes('/account-details')) return 'account-details'
+    if (pathname?.match(/\/order\/[^/]+/)) return 'order-detail' // Order detail pages
     if (pathname?.includes('/order-history')) return 'order-history'
     if (pathname?.includes('/wishlist')) return 'wishlist'
     if (pathname?.includes('/payment')) return 'payment'
     if (pathname?.includes('/addresses')) return 'addresses'
-    if (pathname?.includes('/passkeys')) return 'passkeys'
+    if (pathname?.includes('/store-preferences')) return 'store-preferences'
     if (pathname?.includes('/loyalty')) return 'loyalty'
     return 'overview' // Default to overview
+  }
+  
+  // Extract order number from URL for order detail pages
+  const getOrderNumberFromPath = () => {
+    const match = pathname?.match(/\/order\/([^/]+)/)
+    return match ? match[1] : null
   }
   
   const [activeSection, setActiveSection] = useState(getActiveSectionFromPath())
@@ -147,9 +1133,26 @@ export default function MyAccountPage() {
   // Get logged-in user data
   const [user, setUser] = useState<User | null>(null)
   
+  // Orders state - loaded from repository
+  const [recentOrders, setRecentOrders] = useState<Order[]>([])
+  const [ordersLoading, setOrdersLoading] = useState(true)
+  
+  // Products state for QuickViewModal
+  const [allProducts, setAllProducts] = useState<Product[]>([])
+  
   // Update active section when pathname changes
   useEffect(() => {
-    setActiveSection(getActiveSectionFromPath())
+    const newSection = getActiveSectionFromPath()
+    setActiveSection(newSection)
+    
+    // Always collapse sidebar when navigating to an order detail page (from any page)
+    // Check both the section and the pathname to ensure we catch all order detail pages
+    const isOrderDetailPage = newSection === 'order-detail' || (pathname && pathname.match(/\/order\/[^/]+/))
+    
+    if (isOrderDetailPage) {
+      setIsSidebarCollapsed(true)
+    }
+    // For all other navigation, preserve the current collapsed state (handled by localStorage)
   }, [pathname])
   
   // Load user data on mount and listen for changes
@@ -169,13 +1172,89 @@ export default function MyAccountPage() {
       loadUser()
     }
 
+    // Guard for SSR - window not available during server-side rendering
+    if (typeof window !== 'undefined') {
     window.addEventListener('userLoggedIn', handleLogin)
     window.addEventListener('userLoggedOut', handleLogout)
 
     return () => {
       window.removeEventListener('userLoggedIn', handleLogin)
       window.removeEventListener('userLoggedOut', handleLogout)
+      }
     }
+  }, [])
+  
+  // Load orders and products from repository
+  useEffect(() => {
+    const loadOrders = async () => {
+      try {
+        const orderRepo = getOrderRepo()
+        // Using customer-1 as the default customer ID (in production, this would come from auth)
+        const result = await orderRepo.listOrders('customer-1', undefined, 'date-desc', 1, 100)
+        // Map repository orders to local Order type
+        const mappedOrders: Order[] = result.items.map(order => ({
+          orderNumber: order.orderNumber,
+          status: order.status,
+          method: order.method,
+          amount: order.amount,
+          orderDate: order.orderDate,
+          items: order.items.map(item => ({
+            id: item.id,
+            image: item.image,
+            name: item.name,
+            quantity: item.quantity,
+            color: item.color,
+            size: item.size,
+            price: item.price,
+            originalPrice: item.originalPrice,
+            store: item.store,
+            shippingGroup: item.shippingGroup,
+          })),
+          subtotal: order.subtotal,
+          promotions: order.promotions,
+          shipping: order.shipping,
+          tax: order.tax,
+          total: order.total,
+          paymentInfo: order.paymentInfo,
+          shippingAddress: order.shippingAddress,
+          shippingMethod: order.shippingMethod,
+          deliveryDate: order.deliveryDate,
+          trackingNumber: order.trackingNumber,
+          carrier: order.carrier,
+          carrierTrackingUrl: order.carrierTrackingUrl,
+          shippingGroups: order.shippingGroups,
+          isBOPIS: order.isBOPIS,
+          pickupLocation: order.pickupLocation,
+          pickupAddress: order.pickupAddress,
+          pickupDate: order.pickupDate,
+          pickupReadyDate: order.pickupReadyDate,
+          canReturn: order.canReturn,
+          canCancel: order.canCancel,
+          returnDeadline: order.returnDeadline,
+          customerName: order.customerName,
+          customerEmail: order.customerEmail,
+        }))
+        setRecentOrders(mappedOrders)
+      } catch (error) {
+        console.error('Error loading orders:', error)
+        setRecentOrders([])
+      } finally {
+        setOrdersLoading(false)
+      }
+    }
+    
+    const loadProducts = async () => {
+      try {
+        const products = await getAllProducts()
+        setAllProducts(products)
+      } catch (error) {
+        console.error('Error loading products:', error)
+        setAllProducts([])
+      }
+    }
+    
+    loadOrders()
+    loadProducts()
   }, [])
 
   // Use logged-in user data or fallback to mock data
@@ -277,10 +1356,10 @@ export default function MyAccountPage() {
   const getNextSteps = () => {
     const steps = []
     if (!profileCompletion.emailVerified) {
-      steps.push({ label: 'Verify your email', link: '/account/account-details', section: 'account-details' })
+      steps.push({ label: 'Verify your email', link: '/account/account-details#email', section: 'account-details' })
     }
     if (!profileCompletion.phoneVerified) {
-      steps.push({ label: 'Verify your phone number', link: '/account/account-details', section: 'account-details' })
+      steps.push({ label: 'Verify your phone number', link: '/account/account-details#phone', section: 'account-details' })
     }
     if (!profileCompletion.hasAddress) {
       steps.push({ label: 'Add a shipping address', link: '/account/addresses', section: 'addresses' })
@@ -298,9 +1377,10 @@ export default function MyAccountPage() {
     return `${userName.charAt(0)}${userLastName.charAt(0)}`.toUpperCase()
   }
 
-  const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set())
   const [expandedTracking, setExpandedTracking] = useState<Set<string>>(new Set())
   const [showTrackingDropdown, setShowTrackingDropdown] = useState<Record<string, boolean>>({})
+  const [selectedYear, setSelectedYear] = useState<string>('all')
+  const [orderSearchTerm, setOrderSearchTerm] = useState<string>('')
   const [selectedWishlistId, setSelectedWishlistId] = useState<string>('my-favorites')
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 10
@@ -308,6 +1388,8 @@ export default function MyAccountPage() {
   const [selectedAddressId, setSelectedAddressId] = useState<string>('address-1')
   const [showAddressModal, setShowAddressModal] = useState(false)
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null)
+  const [showRemoveAddressModal, setShowRemoveAddressModal] = useState(false)
+  const [addressToRemove, setAddressToRemove] = useState<string | null>(null)
   const [addressForm, setAddressForm] = useState<Partial<Address>>({
     firstName: '',
     lastName: '',
@@ -322,6 +1404,22 @@ export default function MyAccountPage() {
   const [returningOrderId, setReturningOrderId] = useState<string | null>(null)
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false)
   const [showRenameWishlistModal, setShowRenameWishlistModal] = useState(false)
+  
+  // Gift Cards State
+  const [giftCards, setGiftCards] = useState([
+    { id: 'gc-1', balance: 75.00, last4: '1234' },
+    { id: 'gc-2', balance: 50.00, last4: '5678' },
+  ])
+  const [showAddGiftCardModal, setShowAddGiftCardModal] = useState(false)
+  const [showRemoveGiftCardModal, setShowRemoveGiftCardModal] = useState(false)
+  const [giftCardToRemove, setGiftCardToRemove] = useState<string | null>(null)
+  const [giftCardForm, setGiftCardForm] = useState({
+    cardNumber: '',
+    pin: '',
+  })
+  
+  // Store Credit History State
+  const [showCreditHistory, setShowCreditHistory] = useState(false)
   const [renamingWishlistId, setRenamingWishlistId] = useState<string | null>(null)
   const [newWishlistName, setNewWishlistName] = useState('')
   const [wishlistSortBy, setWishlistSortBy] = useState<'recent' | 'name' | 'price-low' | 'price-high'>('recent')
@@ -334,16 +1432,61 @@ export default function MyAccountPage() {
   const [wishlists, setWishlists] = useState<Wishlist[]>([])
   const [showCreateWishlistModal, setShowCreateWishlistModal] = useState(false)
   const [showInterestsModal, setShowInterestsModal] = useState(false)
-  const [interestsModalCategory, setInterestsModalCategory] = useState<'designStyles' | 'roomTypes' | 'materials' | 'aesthetics' | null>(null)
+  const [interestsModalCategory, setInterestsModalCategory] = useState<'designStyles' | 'roomTypes' | 'materials' | 'aesthetics'>('designStyles')
   const [showPreferencesModal, setShowPreferencesModal] = useState(false)
   const [preferencesModalCategory, setPreferencesModalCategory] = useState<'productCategories' | null>(null)
   const [isMobileMenuCollapsed, setIsMobileMenuCollapsed] = useState(true)
+  
+  // Desktop sidebar collapse state - persisted during navigation using localStorage
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    // Initialize from localStorage if available, otherwise check if we're on an order detail page
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('myAccountSidebarCollapsed')
+      if (saved !== null) {
+        return saved === 'true'
+      }
+      // If no saved preference, auto-collapse on order detail pages
+      return window.location.pathname.match(/\/order\/[^/]+/) !== null
+    }
+    return false
+  })
+  
+  // Persist sidebar state to localStorage whenever it changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('myAccountSidebarCollapsed', String(isSidebarCollapsed))
+    }
+  }, [isSidebarCollapsed])
+
+  // Store Preferences State
+  const [showStoreSelector, setShowStoreSelector] = useState(false)
+  const [preferredStoreForPickup, setPreferredStoreForPickup] = useState({
+    id: '1',
+    name: 'Market Street - San Francisco',
+    address: '415 Mission Street, San Francisco, CA 94105',
+    hours: 'Open today: 10:00 AM - 8:00 PM',
+  })
+  const [showAddPersonModal, setShowAddPersonModal] = useState(false)
+  const [isEditingPickupPreferences, setIsEditingPickupPreferences] = useState(false)
+  const [pickupPreferencesForm, setPickupPreferencesForm] = useState({
+    autoSelectStore: true,
+    pickupNotifications: true,
+    storeEventsPromotions: false,
+  })
+  const [authorizedPersonForm, setAuthorizedPersonForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    relationship: '',
+  })
 
   // Account Details Edit States
   const [isEditingPersonalInfo, setIsEditingPersonalInfo] = useState(false)
-  const [isEditingInterests, setIsEditingInterests] = useState(false)
-  const [isEditingPreferences, setIsEditingPreferences] = useState(false)
+  const [isEditingInterestsAndPreferences, setIsEditingInterestsAndPreferences] = useState(false)
   const [isEditingProfileVisibility, setIsEditingProfileVisibility] = useState(false)
+  
+  // Feature flags - set to true to enable Profile Visibility section
+  const showProfileVisibility = false
   const [isEditingMarketing, setIsEditingMarketing] = useState(false)
 
   // Account Details Form States
@@ -374,6 +1517,42 @@ export default function MyAccountPage() {
     }
   }, [user, isEditingPersonalInfo])
 
+  // Handle hash navigation for email/phone verification
+  useEffect(() => {
+    if (activeSection === 'account-details') {
+      const handleHashChange = () => {
+        const hash = window.location.hash
+        if (hash === '#email' || hash === '#phone') {
+          // Enable editing mode
+          setIsEditingPersonalInfo(true)
+          
+          // Scroll to the field after a short delay to ensure DOM is ready
+          setTimeout(() => {
+            const element = document.getElementById(hash.substring(1))
+            if (element) {
+              element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              // Focus on the input field if it exists
+              const input = element.querySelector('input')
+              if (input) {
+                setTimeout(() => input.focus(), 100)
+              }
+            }
+          }, 100)
+        }
+      }
+      
+      // Check hash on mount and when pathname changes
+      handleHashChange()
+      
+      // Listen for hash changes
+      window.addEventListener('hashchange', handleHashChange)
+      
+      return () => {
+        window.removeEventListener('hashchange', handleHashChange)
+      }
+    }
+  }, [activeSection, pathname])
+
   const [interestsForm, setInterestsForm] = useState({
     designStyles: ['Minimalist', 'Geometric'],
     roomTypes: ['Living Room', 'Office'],
@@ -382,11 +1561,15 @@ export default function MyAccountPage() {
   })
 
   const [preferencesForm, setPreferencesForm] = useState({
-    newsletter: true,
     productCategories: ['Geometric', 'Sets'],
     shoppingPreferences: 'unisex' as 'womens' | 'mens' | 'unisex',
-    preferredStore: '',
-    sizePreference: '',
+  })
+
+  const [measuresForm, setMeasuresForm] = useState({
+    roomWidth: '',
+    roomLength: '',
+    ceilingHeight: '',
+    preferredProductSize: '',
   })
 
   const [profileVisibilityForm, setProfileVisibilityForm] = useState({
@@ -420,288 +1603,431 @@ export default function MyAccountPage() {
     setTimeout(() => setShowEditHint(null), 2000)
   }
 
-  const recentOrders: Order[] = [
-    { 
-      orderNumber: 'INV001', 
-      status: 'Partially Delivered', 
-      method: 'Credit Card', 
-      amount: '$54.00',
-      items: [
-        { 
-          image: '/images/products/pure-cube-white-1.png', 
-          name: 'Pure Cube', 
-          id: 'item-1', 
-          quantity: 1,
-          color: 'Grey',
-          size: 'XL',
-          price: 15.00,
-          originalPrice: 20.00,
-          store: 'Market Street San Francisco',
-          shippingGroup: 'sf-store-address1',
-        },
-        { 
-          image: '/images/products/steady-prism-1.png', 
-          name: 'Steady Prism', 
-          id: 'item-2', 
-          quantity: 1,
-          color: 'Grey',
-          size: 'XL',
-          price: 15.00,
-          originalPrice: 20.00,
-          store: 'Market Street San Francisco',
-          shippingGroup: 'sf-store-address1',
-        },
-        { 
-          image: '/images/products/soft-sphere-1.png', 
-          name: 'Soft Sphere', 
-          id: 'item-3', 
-          quantity: 1,
-          color: 'Grey',
-          size: 'XL',
-          price: 15.00,
-          originalPrice: 20.00,
-          store: 'Market Street San Francisco',
-          shippingGroup: 'sf-store-address2',
-        },
-        { 
-          image: '/images/products/solid-cylinder-1.png', 
-          name: 'Solid Cylinder', 
-          id: 'item-4', 
-          quantity: 1,
-          color: 'Grey',
-          size: 'XL',
-          price: 15.00,
-          originalPrice: 20.00,
-          store: 'Market Street New York',
-          shippingGroup: 'ny-store-address1',
-        },
-      ],
-      subtotal: 60.00,
-      promotions: -10.00,
-      shipping: 0.00,
-      tax: 4.00,
-      total: 54.00,
-      paymentInfo: 'VISA Ending in 1234',
-      shippingAddress: 'John Doe, 415 Mission Street, 94105, San Francisco, CA, United States',
-      shippingMethod: 'Free | Standard Shipping',
-      deliveryDate: 'Sep 15-16, 2024',
-      shippingGroups: [
-        {
-          groupId: 'sf-store-address1',
-          store: 'Market Street San Francisco',
-          status: 'Delivered',
-          trackingNumber: '1Z999AA10123456784',
-          carrier: 'UPS',
-          carrierTrackingUrl: 'https://www.ups.com/track?tracknum=1Z999AA10123456784',
-          deliveryDate: 'Sep 15, 2024',
-          shippingMethod: 'Standard Shipping',
-          shippingAddress: 'John Doe, 415 Mission Street, 94105, San Francisco, CA, United States',
-        },
-        {
-          groupId: 'sf-store-address2',
-          store: 'Market Street San Francisco',
-          status: 'In Transit',
-          trackingNumber: '1Z999AA10123456785',
-          carrier: 'UPS',
-          carrierTrackingUrl: 'https://www.ups.com/track?tracknum=1Z999AA10123456785',
-          deliveryDate: 'Sep 20-22, 2024',
-          shippingMethod: 'Express Shipping',
-          shippingAddress: 'Jane Smith, 789 Market Street, 94103, San Francisco, CA, United States',
-        },
-        {
-          groupId: 'ny-store-address1',
-          store: 'Market Street New York',
-          status: 'In Transit',
-          trackingNumber: '9400111899223197428490',
-          carrier: 'USPS',
-          carrierTrackingUrl: 'https://tools.usps.com/go/TrackConfirmAction?tLabels=9400111899223197428490',
-          deliveryDate: 'Sep 18-19, 2024',
-          shippingMethod: 'Standard Shipping',
-          shippingAddress: 'John Doe, 415 Mission Street, 94105, San Francisco, CA, United States',
-        },
-      ],
-      canReturn: true,
-      canCancel: false,
-      returnDeadline: 'Oct 15, 2024',
-      customerName: 'John Doe',
-      customerEmail: 'john.doe@example.com',
-    },
-    { 
-      orderNumber: 'INV002', 
-      status: 'In Transit', 
-      method: 'Credit Card', 
-      amount: '$43.00',
-      items: [
-        { 
-          image: '/images/products/pure-cube-white-1.png', 
-          name: 'Pure Cube', 
-          id: 'item-1', 
-          quantity: 2,
-          color: 'White',
-          size: 'One Size',
-          price: 15.00,
-        },
-      ],
-      subtotal: 30.00,
-      promotions: 0.00,
-      shipping: 10.00,
-      tax: 3.00,
-      total: 43.00,
-      paymentInfo: 'VISA Ending in 5678',
-      shippingAddress: 'Jane Smith, 123 Main St, 10001, New York, NY, United States',
-      shippingMethod: 'Standard Shipping',
-      deliveryDate: 'Sep 20-22, 2024',
-      trackingNumber: '1Z999AA10987654321',
-      carrier: 'UPS',
-      carrierTrackingUrl: 'https://www.ups.com/track?tracknum=1Z999AA10987654321',
-      canReturn: false,
-      canCancel: true,
-      customerName: 'Jane Smith',
-      customerEmail: 'jane.smith@example.com',
-    },
-    { 
-      orderNumber: 'INV003', 
-      status: 'Ready for Pickup', 
-      method: 'Credit Card', 
-      amount: '$48.38',
-      items: [
-        { 
-          image: '/images/products/pure-cube-white-1.png', 
-          name: 'Pure Cube', 
-          id: 'item-1', 
-          quantity: 1,
-          color: 'White',
-          size: 'One Size',
-          price: 15.00,
-          originalPrice: 20.00,
-          store: 'Market Street San Francisco',
-          shippingGroup: 'pickup-sf',
-        },
-        { 
-          image: '/images/products/steady-prism-1.png', 
-          name: 'Steady Prism', 
-          id: 'item-2', 
-          quantity: 2,
-          color: 'Grey',
-          size: 'One Size',
-          price: 15.00,
-          originalPrice: 20.00,
-          store: 'Market Street San Francisco',
-          shippingGroup: 'pickup-sf',
-        },
-      ],
-      subtotal: 45.00,
-      promotions: 0.00,
-      shipping: 0.00,
-      tax: 3.38,
-      total: 48.38,
-      paymentInfo: 'VISA Ending in 5678',
-      shippingAddress: 'John Doe, 415 Mission Street, 94105, San Francisco, CA, United States',
-      isBOPIS: true,
-      pickupLocation: 'Market Street San Francisco',
-      pickupAddress: '415 Mission Street, San Francisco, CA 94105',
-      pickupReadyDate: 'Sep 16, 2024',
-      pickupDate: 'Sep 16-20, 2024',
-      shippingGroups: [
-        {
-          groupId: 'pickup-sf',
-          store: 'Market Street San Francisco',
-          status: 'Ready for Pickup',
-          pickupLocation: 'Market Street San Francisco',
-          pickupAddress: '415 Mission Street, San Francisco, CA 94105',
-          pickupReadyDate: 'Sep 16, 2024',
-          pickupDate: 'Sep 16-20, 2024',
-          isBOPIS: true,
-        },
-      ],
-      canReturn: true,
-      canCancel: true,
-      customerName: 'John Doe',
-      customerEmail: 'john.doe@example.com',
-    },
-    { 
-      orderNumber: 'INV004', 
-      status: 'Cancelled', 
-      method: 'Credit Card', 
-      amount: '$95.92',
-      items: [
-        { 
-          image: '/images/products/pure-cube-gray-1.png', 
-          name: 'Pure Cube', 
-          id: 'item-1', 
-          quantity: 1,
-          color: 'Gray',
-          size: 'M',
-          price: 49.00,
-          originalPrice: 49.00,
-          store: 'Market Street San Francisco',
-          shippingGroup: 'canceled-group', // A dummy group for canceled items
-        },
-        { 
-          image: '/images/products/fine-cone-1.png', 
-          name: 'Fine Cone', 
-          id: 'item-2', 
-          quantity: 1,
-          color: 'Black', // Assuming a color for Fine Cone
-          size: 'L',
-          price: 39.00,
-          originalPrice: 39.00,
-          store: 'Market Street New York',
-          shippingGroup: 'canceled-group',
-        },
-      ],
-      subtotal: 88.00,
-      promotions: 0.00,
-      shipping: 0.00,
-      tax: 7.92,
-      total: 95.92,
-      paymentInfo: 'VISA Ending in 3456',
-      shippingAddress: 'John Doe, 415 Mission Street, 94105, San Francisco, CA, United States',
-      shippingMethod: 'Free | Standard Shipping',
-      deliveryDate: 'N/A', // Canceled orders don't have a delivery date
-      canReturn: false,
-      canCancel: false,
-      customerName: 'John Doe',
-      customerEmail: 'john.doe@example.com',
-    },
-    { 
-      orderNumber: 'INV005', 
-      status: 'Delivered', 
-      method: 'Credit Card', 
-      amount: '$250.00',
-      items: [
-        { image: '/images/products/fine-cone-1.png', name: 'Fine Cone', id: 'item-2', quantity: 1 },
-        { image: '/images/products/soft-sphere-1.png', name: 'Soft Sphere', id: 'item-3', quantity: 1 },
-        { image: '/images/products/solid-cylinder-1.png', name: 'Solid Cylinder', id: 'item-4', quantity: 1 },
-      ],
-      subtotal: 220.00,
-      promotions: -15.00,
-      shipping: 0.00,
-      tax: 18.38,
-      total: 223.38,
-      paymentInfo: 'VISA Ending in 7890',
-      shippingAddress: 'John Doe, 415 Mission Street, 94105, San Francisco, CA, United States',
-      shippingMethod: 'Free | Standard Shipping',
-      deliveryDate: 'Sep 5, 2024',
-      trackingNumber: '1Z999AA10123456787',
-      carrier: 'UPS',
-      carrierTrackingUrl: 'https://www.ups.com/track?tracknum=1Z999AA10123456787',
-      canReturn: true,
-      canCancel: false,
-      returnDeadline: 'Oct 5, 2024',
-    },
-  ]
+  // Orders are now loaded from repository in useEffect above
+  // The recentOrders state is populated from getOrderRepo().listOrders()
+  // See /src/data/mock/orders.ts for the order data
 
-  const toggleOrderDetails = (orderNumber: string) => {
-    setExpandedOrders(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(orderNumber)) {
-        newSet.delete(orderNumber)
+  // Normalization function to convert raw order JSON into fulfillmentGroups
+  // This ensures we always have at least 1 fulfillment group, handling:
+  // - Multi-shipping (multiple shipments)
+  // - Single shipping (no shipments array, use order-level fields)
+  // - BOPIS/Pickup (isBOPIS flag or pickup fields)
+  type FulfillmentGroup = {
+    type: 'shipping' | 'pickup'
+    title: string // e.g. "Shipment 1" or "Pickup"
+    status?: string
+    items: Array<{ 
+      id: string
+      name: string
+      price?: number
+      image?: string
+      variantInfo?: string
+      quantity?: number
+      color?: string
+      size?: string
+      originalPrice?: number
+    }>
+    shippingInfo?: {
+      address?: string
+      method?: string
+      carrier?: string
+      trackingNumber?: string
+      eta?: string
+      trackingUrl?: string
+    }
+    pickupInfo?: {
+      locationName?: string
+      address?: string
+      readyDate?: string
+      pickupWindow?: string
+      instructions?: string
+    }
+  }
+
+  const normalizeOrderToFulfillmentGroups = (order: Order): FulfillmentGroup[] => {
+    // If order.shipments exists and is non-empty, map each shipment to a fulfillmentGroup
+    if (order.shippingGroups && order.shippingGroups.length > 0) {
+      return order.shippingGroups.map((group, idx) => {
+        const isPickup = group.isBOPIS || order.isBOPIS
+        const items = (order.items || []).filter(item => item.shippingGroup === group.groupId)
+        
+        if (isPickup) {
+          return {
+            type: 'pickup' as const,
+            title: 'Pickup',
+            status: group.status,
+            items: items.map(item => ({
+              id: item.id,
+              name: item.name,
+              price: item.price,
+              image: item.image,
+              quantity: item.quantity,
+              color: item.color,
+              size: item.size,
+              originalPrice: item.originalPrice,
+              variantInfo: [item.color, item.size].filter(Boolean).join(', ') || undefined,
+            })),
+            pickupInfo: {
+              locationName: group.pickupLocation || order.pickupLocation,
+              address: group.pickupAddress || order.pickupAddress,
+              readyDate: group.pickupReadyDate || order.pickupReadyDate,
+              pickupWindow: group.pickupDate || order.pickupDate,
+              instructions: 'Your order is ready for pickup. Please bring a valid ID and your order confirmation.',
+            },
+          }
       } else {
-        newSet.add(orderNumber)
+          return {
+            type: 'shipping' as const,
+            title: `Shipment ${idx + 1}`,
+            status: group.status,
+            items: items.map(item => ({
+              id: item.id,
+              name: item.name,
+              price: item.price,
+              image: item.image,
+              quantity: item.quantity,
+              color: item.color,
+              size: item.size,
+              originalPrice: item.originalPrice,
+              variantInfo: [item.color, item.size].filter(Boolean).join(', ') || undefined,
+            })),
+            shippingInfo: {
+              address: group.shippingAddress || order.shippingAddress,
+              method: group.shippingMethod || order.shippingMethod,
+              carrier: group.carrier,
+              trackingNumber: group.trackingNumber,
+              eta: group.deliveryDate,
+              trackingUrl: group.carrierTrackingUrl,
+            },
+          }
+        }
+      })
+    }
+    
+    // Else if order.pickup (or order.fulfillmentType indicates pickup/BOPIS)
+    if (order.isBOPIS || order.pickupLocation) {
+      return [{
+        type: 'pickup' as const,
+        title: 'Pickup',
+        status: order.status,
+        items: (order.items || []).map(item => ({
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          image: item.image,
+          quantity: item.quantity,
+          color: item.color,
+          size: item.size,
+          originalPrice: item.originalPrice,
+          variantInfo: [item.color, item.size].filter(Boolean).join(', ') || undefined,
+        })),
+        pickupInfo: {
+          locationName: order.pickupLocation,
+          address: order.pickupAddress,
+          readyDate: order.pickupReadyDate,
+          pickupWindow: order.pickupDate,
+          instructions: 'Your order is ready for pickup. Please bring a valid ID and your order confirmation.',
+        },
+      }]
+    }
+    
+    // Else: Create 1 default shipping group using order.items[] and order-level shipping/tracking fields
+    return [{
+      type: 'shipping' as const,
+      title: 'Shipment 1',
+      status: order.status,
+      items: (order.items || []).map(item => ({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        image: item.image,
+        quantity: item.quantity,
+        color: item.color,
+        size: item.size,
+        originalPrice: item.originalPrice,
+        variantInfo: [item.color, item.size].filter(Boolean).join(', ') || undefined,
+      })),
+      shippingInfo: {
+        address: order.shippingAddress,
+        method: order.shippingMethod,
+        carrier: order.carrier,
+        trackingNumber: order.trackingNumber,
+        eta: order.deliveryDate,
+        trackingUrl: order.carrierTrackingUrl,
+      },
+    }]
+  }
+
+
+  // Responsive Order Item Thumbnails Component
+  const OrderItemThumbnails = ({ items, orderId }: { items: Array<{ image?: string; name?: string; id?: string; quantity?: number }>, orderId: string }) => {
+    const containerRef = useRef<HTMLDivElement>(null)
+    // Initialize state to match SSR render (up to 3 items) to prevent hydration mismatch
+    const ssrVisibleCount = Math.min(items.length, 3)
+    const [visibleCount, setVisibleCount] = useState(ssrVisibleCount)
+    const [showBadge, setShowBadge] = useState(items.length > 3)
+    const [remainingCount, setRemainingCount] = useState(Math.max(0, items.length - 3))
+
+    // Constants
+    const TILE = 64 // w-16 = 64px (THUMB_SIZE_PX)
+    const GAP = 8 // gap-2 = 8px (GAP_PX)
+
+    // Pure function that returns values instead of setting state
+    const calculateVisibleItems = useCallback((): { visibleCount: number; showBadge: boolean; remainingCount: number } => {
+      // Guard for SSR or missing ref
+      if (typeof window === 'undefined' || !containerRef.current || items.length === 0) {
+        return {
+          visibleCount: items.length,
+          showBadge: false,
+          remainingCount: 0
+        }
       }
-      return newSet
-    })
+
+      const el = containerRef.current
+      // Get inner width by subtracting padding
+      const rect = el.getBoundingClientRect()
+      const style = window.getComputedStyle(el)
+      const paddingLeft = parseFloat(style.paddingLeft) || 0
+      const paddingRight = parseFloat(style.paddingRight) || 0
+      const innerWidth = rect.width - paddingLeft - paddingRight
+
+      // Formula: k*TILE + (k-1)*GAP <= innerWidth
+      // Solving: k*(TILE+GAP) - GAP <= innerWidth
+      // k <= (innerWidth + GAP) / (TILE+GAP)
+      const maxTiles = Math.floor((innerWidth + GAP) / (TILE + GAP))
+      
+      // Ensure at least 1 tile can fit
+      const maxVisible = Math.max(1, maxTiles)
+
+      if (items.length <= maxVisible) {
+        // All items fit - show all, no +N badge
+        return {
+          visibleCount: items.length,
+          showBadge: false,
+          remainingCount: 0
+        }
+      } else {
+        // Not all fit - reserve last slot for +N badge tile
+        // visibleCount = maxVisible - 1, but must be at least 1
+        const visibleCount = Math.max(1, maxVisible - 1)
+        return {
+          visibleCount,
+          showBadge: true,
+          remainingCount: items.length - visibleCount
+        }
+      }
+    }, [items.length])
+
+    // State updates ONLY happen inside useEffect (client-only)
+    useEffect(() => {
+      // Guard for SSR - browser APIs not available during server-side rendering
+      if (typeof window === 'undefined') return
+      if (!containerRef.current) return
+
+      // Calculate and set state
+      const result = calculateVisibleItems()
+      setVisibleCount(result.visibleCount)
+      setShowBadge(result.showBadge)
+      setRemainingCount(result.remainingCount)
+
+      // Set up ResizeObserver
+      const resizeObserver = new ResizeObserver(() => {
+        if (!containerRef.current) return
+        const result = calculateVisibleItems()
+        setVisibleCount(result.visibleCount)
+        setShowBadge(result.showBadge)
+        setRemainingCount(result.remainingCount)
+      })
+
+      resizeObserver.observe(containerRef.current)
+
+      return () => {
+        resizeObserver.disconnect()
+      }
+    }, [calculateVisibleItems])
+
+    if (items.length === 0) return null
+
+    // Use state values for rendering (initialized to match SSR, then updated by useEffect)
+    const visibleItems = items.slice(0, visibleCount)
+    const shouldShowBadge = showBadge
+    const badgeCount = remainingCount
+
+    return (
+      <div ref={containerRef} className="flex items-center gap-2 mb-4">
+        {visibleItems.map((item, itemIdx) => (
+          <div key={item.id || `${orderId}-item-${itemIdx}`} className="relative flex-shrink-0">
+            <div className="w-16 h-16 bg-brand-gray-100 rounded-lg overflow-hidden border border-brand-gray-200">
+              {item.image ? (
+                <Image
+                  src={item.image}
+                  alt={item.name || 'Product'}
+                  width={64}
+                  height={64}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <svg className="w-6 h-6 text-brand-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </div>
+              )}
+            </div>
+            {/* Quantity Badge */}
+            {item.quantity && item.quantity > 1 && (
+              <div className="absolute -top-1 -right-1 w-5 h-5 bg-brand-blue-500 text-white rounded-full flex items-center justify-center text-xs font-semibold border-2 border-white">
+                {item.quantity}
+              </div>
+            )}
+          </div>
+        ))}
+        {shouldShowBadge && (
+          <div className="relative flex-shrink-0">
+            <div className="w-16 h-16 bg-brand-gray-100 rounded-lg border border-brand-gray-200 flex items-center justify-center">
+              <span className="text-sm font-semibold text-brand-gray-600">
+                +{badgeCount}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Reusable Order Summary Card Component
+  const OrderSummaryCard = ({ order, variant = 'full' }: { order: Order; variant?: 'full' | 'compact' }) => {
+    const fulfillmentGroups = normalizeOrderToFulfillmentGroups(order)
+    const allItems = fulfillmentGroups.flatMap(g => g.items)
+    const totalItemsCount = allItems.length
+    const isPickup = order.isBOPIS || fulfillmentGroups.some(g => g.type === 'pickup')
+    const pickupGroup = fulfillmentGroups.find(g => g.type === 'pickup')
+    const isCompact = variant === 'compact'
+
+    return (
+      <div 
+        className={`${isCompact ? 'p-4' : 'p-6'} hover:bg-brand-gray-50 transition-colors cursor-pointer border-b border-brand-gray-200 last:border-b-0`}
+        onClick={(e) => {
+          // Only navigate if clicking on the row itself, not on links/buttons
+          if ((e.target as HTMLElement).closest('a, button')) return
+          router.push(`/order/${order.orderNumber}`)
+        }}
+      >
+        {/* Meta Bar: Order Date, Total, Items Count, Status */}
+        <div className={`bg-brand-gray-50 border-b border-brand-gray-200 ${isCompact ? '-mx-4 -mt-4 px-4 pt-2.5 pb-2.5 mb-4' : '-mx-6 -mt-6 px-6 pt-3 pb-3 mb-6'} rounded-t-lg`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-6 flex-1">
+              {/* Order Date */}
+              {order.orderDate && (
+                <div>
+                  <span className="text-xs text-brand-gray-500 font-medium">Order Date</span>
+                  <p className="text-sm font-semibold text-brand-black mt-0.5">{order.orderDate}</p>
+                </div>
+              )}
+              {/* Total */}
+              <div>
+                <span className="text-xs text-brand-gray-500 font-medium">Total</span>
+                <p className="text-sm font-semibold text-brand-black mt-0.5">{order.amount}</p>
+              </div>
+              {/* Items Count */}
+              <div>
+                <span className="text-xs text-brand-gray-500 font-medium">Items</span>
+                <p className="text-sm font-semibold text-brand-black mt-0.5">{totalItemsCount}</p>
+              </div>
+            </div>
+            {/* Status Pill - Right aligned */}
+            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold ${
+              order.status === 'Delivered' || order.status === 'Picked Up'
+                ? 'bg-green-600 text-white'
+                : order.status === 'Partially Delivered'
+                ? 'bg-yellow-100 text-yellow-700'
+                : order.status === 'In Transit' || order.status === 'Ready for Pickup'
+                ? 'bg-blue-100 text-blue-700'
+                : order.status === 'Cancelled'
+                ? 'bg-red-100 text-red-700'
+                : 'bg-brand-gray-100 text-brand-gray-700'
+            }`}>
+              {(order.status === 'Delivered' || order.status === 'Picked Up') && (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+              {order.status === 'Cancelled' && (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              )}
+              {order.status}
+            </span>
+          </div>
+        </div>
+
+        {/* Thumbnails Row - Responsive */}
+        {allItems.length > 0 && (
+          <div className={isCompact ? 'mb-4' : 'mb-6'}>
+            <OrderItemThumbnails items={allItems} orderId={order.orderNumber} />
+          </div>
+        )}
+
+        {/* Pickup Location Card - Always show for BOPIS orders */}
+        {isPickup && pickupGroup?.pickupInfo && (
+          <div className={`${isCompact ? 'mb-4 p-3' : 'mb-6 p-4'} bg-brand-blue-50 border border-brand-blue-200 rounded-lg`}>
+            <h4 className={`${isCompact ? 'text-xs mb-2' : 'text-sm mb-3'} font-semibold text-brand-black`}>Pickup Location</h4>
+            <div className={isCompact ? 'space-y-1.5' : 'space-y-2'}>
+              {pickupGroup.pickupInfo.locationName && (
+                <div>
+                  <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Location</p>
+                  <p className={`${isCompact ? 'text-xs' : 'text-sm'} font-medium text-brand-black`}>{pickupGroup.pickupInfo.locationName}</p>
+                </div>
+              )}
+              {pickupGroup.pickupInfo.address && (
+                <div>
+                  <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Address</p>
+                  <p className={`${isCompact ? 'text-xs' : 'text-sm'} text-brand-black`}>{pickupGroup.pickupInfo.address}</p>
+                </div>
+              )}
+              {pickupGroup.pickupInfo.pickupWindow && (
+                <div>
+                  <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Pickup Window</p>
+                  <p className={`${isCompact ? 'text-xs' : 'text-sm'} text-brand-black`}>{pickupGroup.pickupInfo.pickupWindow}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* CTA: View Order Details & Download Receipt */}
+        <div className={`${isCompact ? 'mt-1' : 'mt-2'} flex items-center justify-between gap-4`}>
+          <Link
+            href={`/order/${order.orderNumber}`}
+            onClick={(e) => e.stopPropagation()}
+            className="text-sm text-brand-blue-500 hover:text-brand-blue-600 hover:underline font-medium flex items-center gap-1.5"
+          >
+            View Order Details
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              if (showToastMessage) {
+                showToastMessage('Receipt download started')
+              }
+              // You can implement actual download logic here
+              // Example: window.open(`/api/receipt/${order.orderNumber}`, '_blank')
+            }}
+            className="text-sm text-brand-gray-600 hover:text-brand-black font-medium flex items-center gap-1.5 transition-colors"
+            title="Download Receipt"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            {!isCompact && <span>Download Receipt</span>}
+          </button>
+        </div>
+      </div>
+    )
   }
 
   // Get selected wishlist and filter/sort items
@@ -782,6 +2108,17 @@ export default function MyAccountPage() {
     expiryYear: undefined,
     bankName: '',
   })
+  const [showRemovePaymentMethodModal, setShowRemovePaymentMethodModal] = useState(false)
+  const [paymentMethodToRemove, setPaymentMethodToRemove] = useState<string | null>(null)
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false)
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  })
+  const [showAddPasskeyModal, setShowAddPasskeyModal] = useState(false)
+  const [showRemovePasskeyModal, setShowRemovePasskeyModal] = useState(false)
+  const [passkeyToRemove, setPasskeyToRemove] = useState<string | null>(null)
 
   // Mock addresses data
   const [addresses, setAddresses] = useState<Address[]>([
@@ -879,14 +2216,37 @@ export default function MyAccountPage() {
     })))
   }
 
+  const handleSetDefaultPaymentMethod = (paymentMethodId: string) => {
+    setPaymentMethods(prev => {
+      const updated = prev.map(method => ({
+        ...method,
+        isDefault: method.id === paymentMethodId,
+      }))
+      // Sort so default is always first
+      return updated.sort((a, b) => {
+        if (a.isDefault) return -1
+        if (b.isDefault) return 1
+        return 0
+      })
+    })
+    showToastMessage('Default payment method updated')
+  }
+
   const handleRemoveAddress = (addressId: string) => {
-    setAddresses(prev => prev.filter(addr => addr.id !== addressId))
-    if (selectedAddressId === addressId) {
-      const remaining = addresses.filter(addr => addr.id !== addressId)
-      if (remaining.length > 0) {
-        setSelectedAddressId(remaining[0].id)
+    const removedAddress = addresses.find(addr => addr.id === addressId)
+    const wasDefault = removedAddress?.isDefault
+    
+    setAddresses(prev => {
+      const remaining = prev.filter(addr => addr.id !== addressId)
+      // If removed address was default, set first remaining address as default
+      if (wasDefault && remaining.length > 0) {
+        return remaining.map((addr, index) => ({
+          ...addr,
+          isDefault: index === 0,
+        }))
       }
-    }
+      return remaining
+    })
   }
 
   // Mock passkeys data
@@ -1023,7 +2383,16 @@ export default function MyAccountPage() {
     setShowAvatarModal(false)
   }
 
-  const curatedProducts: Product[] = getFeaturedProducts().slice(0, 5)
+  const [curatedProducts, setCuratedProducts] = useState<Product[]>([])
+  
+  // Load curated products
+  useEffect(() => {
+    const loadCuratedProducts = async () => {
+      const featured = await getFeaturedProducts()
+      setCuratedProducts(featured.slice(0, 5))
+    }
+    loadCuratedProducts()
+  }, [])
 
   // Helper function to check if product has variants
   const hasVariants = (product: Product): boolean => {
@@ -1108,8 +2477,11 @@ export default function MyAccountPage() {
       }
     }
     
+    // Guard for SSR - window not available during server-side rendering
+    if (typeof window !== 'undefined') {
     window.addEventListener('wishlistUpdated', handleWishlistUpdate as EventListener)
     return () => window.removeEventListener('wishlistUpdated', handleWishlistUpdate as EventListener)
+    }
   }, [activeSection])
 
   // Compute addresses count from addresses array
@@ -1122,73 +2494,10 @@ export default function MyAccountPage() {
     { id: 'wishlist', label: 'Wishlist', count: wishlistCount, icon: 'wishlist', href: '/account/wishlist' },
     { id: 'loyalty', label: 'Loyalty Rewards', icon: 'loyalty', href: '/account/loyalty' },
     { id: 'addresses', label: 'Addresses', count: addressesCount, icon: 'addresses', href: '/account/addresses' },
+    { id: 'store-preferences', label: 'Store Preferences', icon: 'store', href: '/account/store-preferences' },
     { id: 'payment', label: 'Payment Methods', count: paymentMethods.length, icon: 'payment', href: '/account/payment' },
-    { id: 'passkeys', label: 'Passkeys', icon: 'passkey', href: '/account/passkeys' },
     { id: 'logout', label: 'Log Out', icon: 'logout', href: '#' },
   ]
-
-  const renderIcon = (iconName: string) => {
-    const iconClass = 'w-5 h-5'
-    switch (iconName) {
-      case 'overview':
-        return (
-          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-          </svg>
-        )
-      case 'account':
-        return (
-          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
-        )
-      case 'orders':
-        return (
-          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-          </svg>
-        )
-      case 'wishlist':
-        return (
-          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-          </svg>
-        )
-      case 'loyalty':
-        return (
-          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-          </svg>
-        )
-      case 'addresses':
-        return (
-          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        )
-      case 'payment':
-        return (
-          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-          </svg>
-        )
-      case 'passkey':
-        return (
-          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-          </svg>
-        )
-      case 'logout':
-        return (
-          <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-          </svg>
-        )
-      default:
-        return null
-    }
-  }
 
   return (
     <div className="min-h-screen bg-white">
@@ -1196,13 +2505,20 @@ export default function MyAccountPage() {
       <Navigation />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+        <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
           {/* Left Sidebar - Account Navigation */}
-          <aside className="lg:col-span-1">
+          <aside className={`transition-all duration-300 ease-in-out flex-shrink-0 w-full lg:w-auto ${
+            isSidebarCollapsed 
+              ? 'lg:w-12' 
+              : 'lg:w-64'
+          }`}>
             <div className="sticky top-4">
-              {/* Mobile Menu Header with Toggle */}
-              <div className="flex items-center justify-between mb-4 lg:mb-6">
-                <h2 className="text-lg font-semibold text-brand-black">My Account</h2>
+              {/* Header with Toggle */}
+              <div className="flex items-center justify-between mb-4 lg:mb-6 overflow-hidden">
+                <h2 className={`text-lg font-semibold text-brand-black whitespace-nowrap truncate transition-all duration-300 ${
+                  isSidebarCollapsed ? 'lg:w-0 lg:opacity-0' : 'lg:w-auto lg:opacity-100'
+                }`}>My Account</h2>
+                {/* Mobile toggle */}
                 <button
                   onClick={() => setIsMobileMenuCollapsed(!isMobileMenuCollapsed)}
                   className="lg:hidden p-2 rounded-lg hover:bg-brand-gray-100 transition-colors"
@@ -1216,6 +2532,22 @@ export default function MyAccountPage() {
                     viewBox="0 0 24 24"
                   >
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {/* Desktop sidebar toggle */}
+                <button
+                  onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+                  className="hidden lg:flex items-center justify-center p-2 rounded-lg hover:bg-brand-gray-100 transition-colors"
+                  aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                  title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                >
+                  <svg 
+                    className={`w-5 h-5 text-brand-gray-600 transition-transform ${isSidebarCollapsed ? 'rotate-180' : ''}`}
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
                   </svg>
                 </button>
               </div>
@@ -1232,6 +2564,10 @@ export default function MyAccountPage() {
                     : 'opacity-100'
                 }`}>
                 {accountMenuItems.map((item) => {
+                  // Check if this item should be active (for order-detail, highlight order-history)
+                  const isActive = activeSection === item.id || 
+                    (activeSection === 'order-detail' && item.id === 'order-history')
+                  
                   if (item.id === 'logout') {
                     return (
                       <button
@@ -1240,21 +2576,33 @@ export default function MyAccountPage() {
                           // Handle logout
                           console.log('Logout clicked')
                         }}
-                        className={`w-full flex items-center ${isMobileMenuCollapsed ? 'justify-center lg:justify-between' : 'justify-between'} px-4 py-3 rounded-lg text-left transition-colors text-brand-black hover:bg-brand-gray-50`}
+                        className={`w-full grid items-center py-3 rounded-lg text-left transition-all duration-300 text-brand-black hover:bg-brand-gray-50 overflow-hidden px-4 ${
+                          isSidebarCollapsed 
+                            ? 'lg:grid-cols-[20px_0_0]' 
+                            : 'grid-cols-[20px_1fr_auto]'
+                        }`}
+                        title={isSidebarCollapsed ? item.label : undefined}
                       >
-                        <div className={`flex items-center ${isMobileMenuCollapsed ? 'lg:gap-3' : 'gap-3'}`}>
-                          <span className="text-brand-gray-600">
-                            {renderIcon(item.icon)}
-                          </span>
-                          <span className={`text-sm font-medium ${isMobileMenuCollapsed ? 'hidden lg:inline' : ''}`}>
-                            {item.label}
-                          </span>
-                        </div>
-                        {!isMobileMenuCollapsed && (
-                          <svg className="w-4 h-4 lg:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                          </svg>
-                        )}
+                        {/* Icon - always left-aligned, fixed 20x20 size */}
+                        <span className="inline-flex items-center justify-center w-5 h-5 shrink-0 text-brand-gray-600 transition-colors">
+                          {renderIcon(item.icon)}
+                        </span>
+                        {/* Label - collapses to 0 width when collapsed */}
+                        <span className={`text-sm font-medium whitespace-nowrap px-3 transition-all duration-300 ${
+                          isSidebarCollapsed 
+                            ? 'lg:w-0 lg:opacity-0 lg:overflow-hidden lg:px-0' 
+                            : ''
+                        }`}>
+                          {item.label}
+                        </span>
+                        {/* Chevron - collapses to 0 width when collapsed */}
+                        <svg className={`w-4 h-4 flex-shrink-0 px-4 transition-all duration-300 ${
+                          isSidebarCollapsed 
+                            ? 'lg:w-0 lg:opacity-0 lg:overflow-hidden lg:px-0' 
+                            : ''
+                        }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
                       </button>
                     )
                   }
@@ -1262,8 +2610,12 @@ export default function MyAccountPage() {
                   return (
                     <div
                       key={item.id}
-                      className={`group w-full flex items-center ${isMobileMenuCollapsed ? 'justify-center lg:justify-between' : 'justify-between'} px-4 py-3 rounded-lg text-left transition-colors relative ${
-                        activeSection === item.id
+                      className={`group w-full grid items-center py-3 rounded-lg text-left transition-all duration-300 relative overflow-hidden ${
+                        isSidebarCollapsed 
+                          ? 'lg:grid-cols-[20px_0_0] lg:px-3 lg:justify-items-start' 
+                          : 'grid-cols-[20px_1fr_auto]'
+                      } px-4 ${
+                        isActive
                           ? 'bg-brand-blue-50 text-brand-blue-600 hover:bg-brand-blue-100'
                           : 'text-brand-black hover:bg-brand-gray-50'
                       }`}
@@ -1272,34 +2624,36 @@ export default function MyAccountPage() {
                         href={item.href || '#'}
                         onClick={() => {
                           // Close mobile menu when item is clicked (on mobile only)
-                          if (window.innerWidth < 1024) {
+                          if (typeof window !== 'undefined' && window.innerWidth < 1024) {
                             setIsMobileMenuCollapsed(true)
                           }
+                          // Keep sidebar state unchanged - only order detail pages should collapse it
                         }}
                         className="absolute inset-0 z-10"
-                        title={isMobileMenuCollapsed ? item.label : undefined}
+                        title={isSidebarCollapsed ? item.label : undefined}
                         aria-label={item.label}
                       />
-                      <div className={`flex items-center ${isMobileMenuCollapsed ? 'lg:gap-3' : 'gap-3'}`}>
-                        <span className={`transition-colors relative ${isMobileMenuCollapsed && item.count !== undefined ? 'lg:static' : ''}`}>
-                          {renderIcon(item.icon)}
-                          {isMobileMenuCollapsed && item.count !== undefined && (
-                            <span className={`absolute -top-1 -right-1 lg:hidden text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${activeSection === item.id ? 'bg-brand-blue-500 text-white' : 'bg-brand-gray-400 text-white'}`}>
-                              {item.count}
-                            </span>
-                          )}
-                        </span>
-                        <span className={`text-sm font-medium ${isMobileMenuCollapsed ? 'hidden lg:inline' : ''}`}>
-                          {item.label}
-                        </span>
-                      </div>
-                      {!isMobileMenuCollapsed && item.count !== undefined && (
-                        <span className={`text-xs ${activeSection === item.id ? 'text-brand-blue-500' : 'text-brand-gray-500'}`}>
-                          {item.count}
-                        </span>
-                      )}
-                      {isMobileMenuCollapsed && item.count !== undefined && (
-                        <span className={`hidden lg:inline text-xs ${activeSection === item.id ? 'text-brand-blue-500' : 'text-brand-gray-500'}`}>
+                      {/* Icon - always left-aligned, fixed 20x20 size */}
+                      <span className="inline-flex items-center justify-center w-5 h-5 shrink-0 transition-colors">
+                        {renderIcon(item.icon)}
+                      </span>
+                      {/* Label - collapses to 0 width when collapsed */}
+                      <span className={`text-sm font-medium whitespace-nowrap px-3 transition-all duration-300 ${
+                        isSidebarCollapsed 
+                          ? 'lg:w-0 lg:opacity-0 lg:overflow-hidden lg:px-0' 
+                          : ''
+                      }`}>
+                        {item.label}
+                      </span>
+                      {/* Count - collapses to 0 width when collapsed */}
+                      {item.count !== undefined && (
+                        <span className={`text-xs flex-shrink-0 px-4 transition-all duration-300 ${
+                          isActive ? 'text-brand-blue-500' : 'text-brand-gray-500'
+                        } ${
+                          isSidebarCollapsed 
+                            ? 'lg:w-0 lg:opacity-0 lg:overflow-hidden lg:px-0' 
+                            : ''
+                        }`}>
                           {item.count}
                         </span>
                       )}
@@ -1312,16 +2666,60 @@ export default function MyAccountPage() {
           </aside>
 
           {/* Main Content */}
-          <div className="lg:col-span-3">
+          <div className="flex-1 min-w-0">
+            {/* Order Detail Section - Inline view with breadcrumb */}
+            {activeSection === 'order-detail' && (
+              <div className="space-y-6">
+                {/* Breadcrumb Navigation */}
+                <nav className="flex items-center gap-2 text-sm" aria-label="Breadcrumb">
+                  <Link 
+                    href="/account/overview" 
+                    className="text-brand-gray-500 hover:text-brand-gray-700 transition-colors"
+                  >
+                    My Account
+                  </Link>
+                  <svg className="w-4 h-4 text-brand-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  <Link 
+                    href="/account/order-history" 
+                    className="text-brand-gray-500 hover:text-brand-gray-700 transition-colors"
+                  >
+                    Order History
+                  </Link>
+                  <svg className="w-4 h-4 text-brand-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  <span className="text-brand-black font-medium">
+                    Order #{getOrderNumberFromPath()}
+                  </span>
+                </nav>
+                
+                {/* Back Button */}
+                <button 
+                  onClick={() => router.push('/account/order-history')}
+                  className="inline-flex items-center gap-2 text-sm text-brand-gray-600 hover:text-brand-black transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                  Back to Order History
+                </button>
+                
+                {/* Order Detail Content - Will be rendered by OrderDetailContent component */}
+                <OrderDetailContent orderNumber={getOrderNumberFromPath()} showToastMessage={showToastMessage} />
+              </div>
+            )}
+            
             {activeSection === 'overview' && (
               <div className="space-y-8">
                 {/* Profile Header */}
-                <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
-                  <div className="flex items-start gap-6">
+                <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-4 sm:p-6">
+                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6">
                     {/* Avatar */}
                     <button
                       onClick={() => setShowAvatarModal(true)}
-                      className="relative w-20 h-20 bg-brand-blue-500 rounded-full flex items-center justify-center flex-shrink-0 group cursor-pointer transition-all hover:ring-2 hover:ring-brand-blue-300 hover:ring-offset-2"
+                      className="relative w-16 h-16 sm:w-20 sm:h-20 bg-brand-blue-500 rounded-full flex items-center justify-center flex-shrink-0 group cursor-pointer transition-all hover:ring-2 hover:ring-brand-blue-300 hover:ring-offset-2"
                     >
                       {avatarImage ? (
                         <img 
@@ -1342,9 +2740,9 @@ export default function MyAccountPage() {
                     </button>
                     
                     {/* Profile Info */}
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h1 className="text-2xl font-semibold text-brand-black">
+                    <div className="flex-1 text-center sm:text-left w-full">
+                      <div className="flex flex-col sm:flex-row items-center sm:items-start gap-2 sm:gap-3 mb-2">
+                        <h1 className="text-xl sm:text-2xl font-semibold text-brand-black">
                           {userName} {userLastName}
                         </h1>
                         {loyaltyStatus && (
@@ -1354,50 +2752,6 @@ export default function MyAccountPage() {
                         )}
                       </div>
                       <p className="text-sm text-brand-gray-600 mb-4">{userEmail}</p>
-                      
-                      {/* Verification Status */}
-                      <div className="flex items-center gap-4 mb-4">
-                        <div className="flex items-center gap-2">
-                          {profileCompletion.emailVerified ? (
-                            <div className="flex items-center gap-1.5 text-green-600">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
-                              <span className="text-xs font-medium">Email Verified</span>
-                            </div>
-                          ) : (
-                            <Link 
-                              href="/account/account-details"
-                              className="flex items-center gap-1.5 text-brand-blue-500 hover:text-brand-blue-600 text-xs font-medium"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                              </svg>
-                              Verify Email
-                            </Link>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {profileCompletion.phoneVerified ? (
-                            <div className="flex items-center gap-1.5 text-green-600">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
-                              <span className="text-xs font-medium">Phone Verified</span>
-                            </div>
-                          ) : (
-                            <Link 
-                              href="/account/account-details"
-                              className="flex items-center gap-1.5 text-brand-blue-500 hover:text-brand-blue-600 text-xs font-medium"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                              </svg>
-                              Verify Phone
-                            </Link>
-                          )}
-                        </div>
-                      </div>
                       
                       {/* Profile Completion Progress Bar */}
                       <div className="mb-4">
@@ -1498,571 +2852,10 @@ export default function MyAccountPage() {
                       </Link>
                     </div>
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                        <thead className="bg-brand-gray-50 border-b border-brand-gray-200">
-                          <tr>
-                            <th className="px-6 py-3 text-left text-sm font-medium text-brand-black w-[120px]">Order Number</th>
-                            <th className="px-6 py-3 text-left text-sm font-medium text-brand-black w-[200px]">Status</th>
-                            <th className="px-6 py-3 text-left text-sm font-medium text-brand-black">Method</th>
-                            <th className="px-6 py-3 text-left text-sm font-medium text-brand-black w-[100px]">Amount</th>
-                            <th className="px-6 py-3 text-left text-sm font-medium text-brand-black w-[130px]"></th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-brand-gray-200">
-                          {recentOrders.slice(0, 5).map((order, idx) => {
-                            const isExpanded = expandedOrders.has(order.orderNumber)
-                            return (
-                              <React.Fragment key={idx}>
-                                <tr className="hover:bg-brand-gray-50 transition-colors">
-                                  <td className="px-6 py-4 text-sm text-brand-black">{order.orderNumber}</td>
-                                  <td className="px-6 py-4">
-                                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold ${
-                                      order.status === 'Delivered' || order.status === 'Picked Up'
-                                        ? 'bg-green-600 text-white'
-                                        : order.status === 'Partially Delivered'
-                                        ? 'bg-yellow-100 text-yellow-700'
-                                        : order.status === 'In Transit' || order.status === 'Ready for Pickup'
-                                        ? 'bg-blue-100 text-blue-700'
-                                        : order.status === 'Cancelled'
-                                        ? 'bg-red-100 text-red-700'
-                                        : 'bg-brand-gray-100 text-brand-gray-700'
-                                    }`}>
-                                      {(order.status === 'Delivered' || order.status === 'Picked Up') && (
-                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                        </svg>
-                                      )}
-                                      {order.status === 'Cancelled' && (
-                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
-                                      )}
-                                      {order.status}
-                                    </span>
-                                  </td>
-                                  <td className="px-6 py-4 text-sm text-brand-black">{order.method}</td>
-                                  <td className="px-6 py-4 text-sm text-brand-black">{order.amount}</td>
-                                  <td className="px-6 py-4">
-                                    <button 
-                                      onClick={() => toggleOrderDetails(order.orderNumber)}
-                                      className="px-4 py-2 bg-white border border-brand-gray-300 text-sm font-medium text-brand-black rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm whitespace-nowrap"
-                                    >
-                                      {isExpanded ? 'Hide details' : 'View details'}
-                                    </button>
-                                  </td>
-                                </tr>
-                                {isExpanded && order.items && (
-                                  <tr>
-                                    <td colSpan={5} className="px-6 py-8 bg-brand-gray-50 animate-order-expand">
-                                      <div className="space-y-6">
-                                        {/* Header with View Full Details Link */}
-                                        <div className="flex items-center justify-between pb-4 border-b border-brand-gray-200">
-                                          <h3 className="text-lg font-semibold text-brand-black">Order Details</h3>
-                                          <Link
-                                            href={`/order/${order.orderNumber}`}
-                                            className="text-sm text-brand-blue-500 hover:text-brand-blue-600 hover:underline font-medium flex items-center gap-1.5"
-                                          >
-                                            View Full Order Details
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                            </svg>
-                                          </Link>
-                                        </div>
-
-                                        {/* Order Summary and Payment Method - At Top */}
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-6 border-b border-brand-gray-200">
-                                          {/* Order Summary */}
-                                          <div>
-                                            <h4 className="text-sm font-semibold text-brand-black mb-3">Order Summary</h4>
-                                            <div className="bg-white rounded-lg border border-brand-gray-200 p-4 space-y-2">
-                                              <div className="flex justify-between text-sm">
-                                                <span className="text-brand-gray-600">Subtotal</span>
-                                                <span className="text-brand-black">${order.subtotal?.toFixed(2)}</span>
-                                              </div>
-                                              {order.promotions && order.promotions !== 0 && (
-                                                <div className="flex justify-between text-sm">
-                                                  <span className="text-brand-gray-600">Promotions</span>
-                                                  <span className="text-green-600">-${Math.abs(order.promotions || 0).toFixed(2)}</span>
-                                                </div>
-                                              )}
-                                              <div className="flex justify-between text-sm">
-                                                <span className="text-brand-gray-600">Shipping</span>
-                                                <span className="text-brand-black">
-                                                  {order.shipping === 0 ? '$0.00' : `$${order.shipping?.toFixed(2)}`}
-                                                </span>
-                                              </div>
-                                              <div className="flex justify-between text-sm">
-                                                <span className="text-brand-gray-600">Tax</span>
-                                                <span className="text-brand-black">${order.tax?.toFixed(2)}</span>
-                                              </div>
-                                              <div className="pt-3 border-t border-brand-gray-200">
-                                                <div className="flex justify-between">
-                                                  <span className="text-base font-semibold text-brand-black">Total</span>
-                                                  <span className="text-base font-semibold text-brand-black">${order.total?.toFixed(2)}</span>
-                                                </div>
-                                              </div>
-                                            </div>
-                                          </div>
-                                          
-                                          {/* Payment Method */}
-                                          <div>
-                                            <h4 className="text-sm font-semibold text-brand-black mb-3">Payment Method</h4>
-                                            <div className="bg-white rounded-lg border border-brand-gray-200 p-4">
-                                              <p className="text-sm text-brand-gray-700">{order.paymentInfo}</p>
-                                            </div>
-                                            
-                                            {/* Return Information */}
-                                            {order.canReturn && order.returnDeadline && (
-                                              <div className="mt-4">
-                                                <p className="text-sm text-brand-gray-700">
-                                                  Eligible for return until {order.returnDeadline}
-                                                </p>
-                                              </div>
-                                            )}
-                                          </div>
-                                        </div>
-
-                                        {/* Items Ordered - Grouped by Shipment */}
-                                        <div>
-                                          <h3 className="text-lg font-semibold text-brand-black mb-4">Items Ordered</h3>
-                                          {(() => {
-                                            // Group items by shipping group ID (which represents a shipment/address)
-                                            const shippingGroupsMap = new Map(
-                                              order.shippingGroups?.map(sg => [sg.groupId, sg]) || []
-                                            )
-                                            
-                                            // Group items by shippingGroup ID
-                                            const groupedItems = order.items.reduce((acc, item) => {
-                                              const groupKey = item.shippingGroup || 'default'
-                                              if (!acc[groupKey]) {
-                                                const shippingGroup = shippingGroupsMap.get(groupKey)
-                                                acc[groupKey] = {
-                                                  groupId: groupKey,
-                                                  items: []
-                                                }
-                                              }
-                                              acc[groupKey].items.push(item)
-                                              return acc
-                                            }, {} as Record<string, { groupId: string; items: typeof order.items }>)
-
-                                            const groups = Object.entries(groupedItems)
-                                            
-                                            return (
-                                              <div className="space-y-6">
-                                                {groups.map(([groupKey, group], groupIdx) => {
-                                                  // Find matching shipping group data
-                                                  const shippingGroup = order.shippingGroups?.find(sg => sg.groupId === groupKey)
-                                                  const shipmentNumber = groupIdx + 1
-                                                  const shipmentAddress = shippingGroup?.shippingAddress || order.shippingAddress
-                                                  
-                                                  return (
-                                                    <div key={groupKey} className={groupIdx > 0 ? 'pt-6 border-t border-brand-gray-200' : ''}>
-                                                      {/* Shipment Header with Status */}
-                                                      <div className="flex items-center justify-between mb-4">
-                                                        <div>
-                                                          <h4 className="text-sm font-semibold text-brand-black mb-1">
-                                                            Shipment {shipmentNumber}
-                                                          </h4>
-                                                          <p className="text-xs text-brand-gray-600">
-                                                            {shipmentAddress}
-                                                          </p>
-                                                        </div>
-                                                        {shippingGroup && (
-                                                          <span className={`text-xs font-semibold px-2 py-1 rounded ${
-                                                            shippingGroup.status === 'Delivered' || shippingGroup.status === 'Picked Up'
-                                                              ? 'bg-green-100 text-green-700'
-                                                              : shippingGroup.status === 'In Transit' || shippingGroup.status === 'Ready for Pickup'
-                                                              ? 'bg-blue-100 text-blue-700'
-                                                              : shippingGroup.status === 'Cancelled'
-                                                              ? 'bg-red-100 text-red-700'
-                                                              : 'bg-gray-100 text-gray-700'
-                                                          }`}>
-                                                            {shippingGroup.status}
-                                                          </span>
-                                                        )}
-                                                      </div>
-
-                                                      {/* Items - Horizontal Layout */}
-                                                      <div className="flex flex-wrap gap-3 mb-4">
-                                                        {group.items.map((item, idx) => (
-                                                          <div key={idx} className="flex flex-col w-24">
-                                                            <div className="w-24 h-24 bg-brand-gray-100 rounded-lg overflow-hidden flex-shrink-0 mb-2">
-                                                              <Image
-                                                                src={item.image}
-                                                                alt={item.name}
-                                                                width={96}
-                                                                height={96}
-                                                                className="w-full h-full object-cover"
-                                                              />
-                                                            </div>
-                                                            <div className="min-w-0">
-                                                              <p className="text-xs font-medium text-brand-black mb-0.5 line-clamp-2">{item.name}</p>
-                                                              {item.color && (
-                                                                <p className="text-xs text-brand-gray-600">Color: {item.color}</p>
-                                                              )}
-                                                              {item.size && (
-                                                                <p className="text-xs text-brand-gray-600">Size: {item.size}</p>
-                                                              )}
-                                                              {item.price && (
-                                                                <div className="flex items-center gap-1.5 mt-1">
-                                                                  {item.originalPrice && item.originalPrice > item.price && (
-                                                                    <span className="text-xs text-brand-gray-500 line-through">
-                                                                      ${item.originalPrice.toFixed(2)}
-                                                                    </span>
-                                                                  )}
-                                                                  <span className="text-xs font-semibold text-brand-black">
-                                                                    ${item.price.toFixed(2)}
-                                                                  </span>
-                                                                </div>
-                                                              )}
-                                                            </div>
-                                                          </div>
-                                                        ))}
-                                                      </div>
-
-                                                      {/* Collapsible Tracking/Shipping or Pickup Info for this group */}
-                                                      {shippingGroup && (
-                                                        <div>
-                                                          <button
-                                                            onClick={() => {
-                                                              const trackingKey = `${order.orderNumber}-${groupKey}`
-                                                              setExpandedTracking(prev => {
-                                                                const newSet = new Set(prev)
-                                                                if (newSet.has(trackingKey)) {
-                                                                  newSet.delete(trackingKey)
-                                                                } else {
-                                                                  newSet.add(trackingKey)
-                                                                }
-                                                                return newSet
-                                                              })
-                                                            }}
-                                                            className="flex items-center justify-between w-full text-left text-sm font-semibold text-brand-black mb-2 hover:text-brand-blue-600 transition-colors"
-                                                          >
-                                                            <span>{shippingGroup.isBOPIS ? 'Pickup Information' : 'Tracking & Shipping Information'}</span>
-                                                            <svg 
-                                                              className={`w-4 h-4 transition-transform ${expandedTracking.has(`${order.orderNumber}-${groupKey}`) ? 'rotate-180' : ''}`}
-                                                              fill="none" 
-                                                              stroke="currentColor" 
-                                                              viewBox="0 0 24 24"
-                                                            >
-                                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                                            </svg>
-                                                          </button>
-                                                          {expandedTracking.has(`${order.orderNumber}-${groupKey}`) && (
-                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-brand-gray-50 rounded-lg p-3">
-                                                          {shippingGroup.isBOPIS ? (
-                                                            <>
-                                                              {/* Pickup Information */}
-                                                              <div>
-                                                                <h5 className="text-xs font-semibold text-brand-black mb-2">Pickup Information</h5>
-                                                                <div className="bg-brand-blue-50 border border-brand-blue-200 rounded-lg p-2 space-y-1.5">
-                                                                  {shippingGroup.pickupLocation && (
-                                                                    <div>
-                                                                      <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Pickup Location</p>
-                                                                      <p className="text-xs font-medium text-brand-black">{shippingGroup.pickupLocation}</p>
-                                                                    </div>
-                                                                  )}
-                                                                  {shippingGroup.pickupAddress && (
-                                                                    <div>
-                                                                      <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Store Address</p>
-                                                                      <p className="text-xs text-brand-black">{shippingGroup.pickupAddress}</p>
-                                                                    </div>
-                                                                  )}
-                                                                  {shippingGroup.pickupReadyDate && (
-                                                                    <div>
-                                                                      <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Ready for Pickup</p>
-                                                                      <p className="text-xs font-medium text-brand-black">{shippingGroup.pickupReadyDate}</p>
-                                                                    </div>
-                                                                  )}
-                                                                </div>
-                                                              </div>
-                                                              {/* Pickup Details */}
-                                                              <div>
-                                                                <h5 className="text-xs font-semibold text-brand-black mb-2">Pickup Details</h5>
-                                                                <div className="bg-white rounded-lg border border-brand-gray-200 p-2">
-                                                                  <p className="text-xs text-brand-gray-600">
-                                                                    Your order is ready for pickup. Please bring a valid ID and your order confirmation.
-                                                                  </p>
-                                                                </div>
-                                                              </div>
-                                                            </>
-                                                          ) : (
-                                                            <>
-                                                              {/* Tracking Information */}
-                                                              {shippingGroup.trackingNumber && (
-                                                                <div>
-                                                                  <h5 className="text-xs font-semibold text-brand-black mb-2">Tracking</h5>
-                                                                  <div className="bg-brand-blue-50 border border-brand-blue-200 rounded-lg p-2 space-y-1.5">
-                                                                    <div>
-                                                                      <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Tracking Number</p>
-                                                                      <p className="text-xs font-mono font-medium text-brand-black">{shippingGroup.trackingNumber}</p>
-                                                                    </div>
-                                                                    {shippingGroup.carrier && (
-                                                                      <div>
-                                                                        <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Carrier</p>
-                                                                        <p className="text-xs font-medium text-brand-black">{shippingGroup.carrier}</p>
-                                                                      </div>
-                                                                    )}
-                                                                    {shippingGroup.deliveryDate && (
-                                                                      <div>
-                                                                        <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Estimated Delivery</p>
-                                                                        <p className="text-xs font-medium text-brand-black">{shippingGroup.deliveryDate}</p>
-                                                                      </div>
-                                                                    )}
-                                                                    {shippingGroup.carrierTrackingUrl && (
-                                                                      <a
-                                                                        href={shippingGroup.carrierTrackingUrl}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        className="inline-flex items-center gap-1 text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline font-medium mt-1"
-                                                                      >
-                                                                        Track on {shippingGroup.carrier} website
-                                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                                                        </svg>
-                                                                      </a>
-                                                                    )}
-                                                                  </div>
-                                                                </div>
-                                                              )}
-
-                                                              {/* Shipping Information */}
-                                                              <div>
-                                                                <h5 className="text-xs font-semibold text-brand-black mb-2">Shipping Information</h5>
-                                                                <div className="bg-white rounded-lg border border-brand-gray-200 p-2 space-y-1.5">
-                                                                  {shippingGroup.shippingAddress && (
-                                                                    <div>
-                                                                      <p className="text-xs font-medium text-brand-gray-500 mb-0.5">Shipping Address</p>
-                                                                      <p className="text-xs text-brand-black">{shippingGroup.shippingAddress}</p>
-                                                                    </div>
-                                                                  )}
-                                                                  {shippingGroup.shippingMethod && (
-                                                                    <div>
-                                                                      <p className="text-xs font-medium text-brand-gray-500 mb-0.5">Shipping Method</p>
-                                                                      <p className="text-xs text-brand-black">{shippingGroup.shippingMethod}</p>
-                                                                    </div>
-                                                                  )}
-                                                                </div>
-                                                              </div>
-                                                            </>
-                                                          )}
-                                                            </div>
-                                                          )}
-                                                        </div>
-                                                      )}
-                                                      {!shippingGroup && order.trackingNumber && (
-                                                        // For simple orders without shippingGroups but with tracking info
-                                                        <div>
-                                                          <button
-                                                            onClick={() => {
-                                                              const trackingKey = `${order.orderNumber}-default`
-                                                              setExpandedTracking(prev => {
-                                                                const newSet = new Set(prev)
-                                                                if (newSet.has(trackingKey)) {
-                                                                  newSet.delete(trackingKey)
-                                                                } else {
-                                                                  newSet.add(trackingKey)
-                                                                }
-                                                                return newSet
-                                                              })
-                                                            }}
-                                                            className="flex items-center justify-between w-full text-left text-sm font-semibold text-brand-black mb-2 hover:text-brand-blue-600 transition-colors"
-                                                          >
-                                                            <span>Tracking & Shipping Information</span>
-                                                            <svg 
-                                                              className={`w-4 h-4 transition-transform ${expandedTracking.has(`${order.orderNumber}-default`) ? 'rotate-180' : ''}`}
-                                                              fill="none" 
-                                                              stroke="currentColor" 
-                                                              viewBox="0 0 24 24"
-                                                            >
-                                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                                            </svg>
-                                                          </button>
-                                                          {expandedTracking.has(`${order.orderNumber}-default`) && (
-                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-brand-gray-50 rounded-lg p-3">
-                                                            {/* Tracking Information */}
-                                                            <div>
-                                                              <h5 className="text-xs font-semibold text-brand-black mb-2">Tracking</h5>
-                                                              <div className="bg-brand-blue-50 border border-brand-blue-200 rounded-lg p-2 space-y-1.5">
-                                                                <div>
-                                                                  <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Tracking Number</p>
-                                                                  <p className="text-xs font-mono font-medium text-brand-black">{order.trackingNumber}</p>
-                                                                </div>
-                                                                {order.carrier && (
-                                                                  <div>
-                                                                    <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Carrier</p>
-                                                                    <p className="text-xs font-medium text-brand-black">{order.carrier}</p>
-                                                                  </div>
-                                                                )}
-                                                                {order.deliveryDate && (
-                                                                  <div>
-                                                                    <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Estimated Delivery</p>
-                                                                    <p className="text-xs font-medium text-brand-black">{order.deliveryDate}</p>
-                                                                  </div>
-                                                                )}
-                                                                {order.carrierTrackingUrl && (
-                                                                  <a
-                                                                    href={order.carrierTrackingUrl}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="inline-flex items-center gap-1 text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline font-medium mt-1"
-                                                                  >
-                                                                    Track on {order.carrier} website
-                                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                                                    </svg>
-                                                                  </a>
-                                                                )}
-                                                              </div>
-                                                            </div>
-
-                                                            {/* Shipping Information */}
-                                                            <div>
-                                                              <h5 className="text-xs font-semibold text-brand-black mb-2">Shipping Information</h5>
-                                                              <div className="bg-white rounded-lg border border-brand-gray-200 p-2 space-y-1.5">
-                                                                {order.shippingAddress && (
-                                                                  <div>
-                                                                    <p className="text-xs font-medium text-brand-gray-500 mb-0.5">Shipping Address</p>
-                                                                    <p className="text-xs text-brand-black">{order.shippingAddress}</p>
-                                                                  </div>
-                                                                )}
-                                                                {order.shippingMethod && (
-                                                                  <div>
-                                                                    <p className="text-xs font-medium text-brand-gray-500 mb-0.5">Shipping Method</p>
-                                                                    <p className="text-xs text-brand-black">{order.shippingMethod}</p>
-                                                                  </div>
-                                                                )}
-                                                              </div>
-                                                            </div>
-                                                          </div>
-                                                          )}
-                                                        </div>
-                                                      )}
-                                                    </div>
-                                                  )
-                                                })}
-                                              </div>
-                                            )
-                                          })()}
-                                        </div>
-
-                                        {/* Action Buttons - Left Aligned */}
-                                        <div>
-                                          <h4 className="text-sm font-semibold text-brand-black mb-3">Actions</h4>
-                                          <div className="flex flex-wrap gap-2 relative">
-                                            {order.status !== 'Cancelled' && (() => {
-                                              // Helper function to extract name from address
-                                              const extractNameFromAddress = (address: string): string => {
-                                                const match = address.match(/^([^,]+),/)
-                                                return match ? match[1].trim() : 'Shipment'
-                                              }
-                                              
-                                              // For multi-shipment orders, show dropdown
-                                              if (order.shippingGroups && order.shippingGroups.length > 1) {
-                                                const shipmentsWithTracking = order.shippingGroups.filter(g => g.carrierTrackingUrl)
-                                                const dropdownKey = `${order.orderNumber}-tracking-dropdown`
-                                                
-                                                return (
-                                                  <div className="relative">
-                                                    <button
-                                                      onClick={() => setShowTrackingDropdown(prev => ({ ...prev, [dropdownKey]: !prev[dropdownKey] }))}
-                                                      className="px-4 py-2.5 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm flex items-center gap-2"
-                                                    >
-                                                      Track shipment
-                                                      <svg 
-                                                        className={`w-4 h-4 transition-transform ${showTrackingDropdown[dropdownKey] ? 'rotate-180' : ''}`}
-                                                        fill="none" 
-                                                        stroke="currentColor" 
-                                                        viewBox="0 0 24 24"
-                                                      >
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                                      </svg>
-                                                    </button>
-                                                    
-                                                    {showTrackingDropdown[dropdownKey] && (
-                                                      <>
-                                                        {/* Backdrop to close dropdown */}
-                                                        <div 
-                                                          className="fixed inset-0 z-10" 
-                                                          onClick={() => setShowTrackingDropdown(prev => ({ ...prev, [dropdownKey]: false }))}
-                                                        />
-                                                        {/* Dropdown menu */}
-                                                        <div className="absolute top-full left-0 mt-2 bg-white border border-brand-gray-200 rounded-lg shadow-lg z-20 min-w-[200px]">
-                                                          {shipmentsWithTracking.map((group) => {
-                                                            const recipientName = extractNameFromAddress(group.shippingAddress || order.shippingAddress || '')
-                                                            return (
-                                                              <a
-                                                                key={group.groupId}
-                                                                href={group.carrierTrackingUrl}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="block px-4 py-3 text-sm text-brand-black hover:bg-brand-gray-50 transition-colors first:rounded-t-lg last:rounded-b-lg"
-                                                                onClick={() => setShowTrackingDropdown(prev => ({ ...prev, [dropdownKey]: false }))}
-                                                              >
-                                                                <div className="font-medium">{recipientName}</div>
-                                                                {group.trackingNumber && (
-                                                                  <div className="text-xs text-brand-gray-600 mt-1 font-mono">
-                                                                    {group.trackingNumber}
-                                                                  </div>
-                                                                )}
-                                                              </a>
-                                                            )
-                                                          })}
-                                                        </div>
-                                                      </>
-                                                    )}
-                                                  </div>
-                                                )
-                                              } else if (order.shippingGroups && order.shippingGroups.length === 1) {
-                                                // Single shipment with shipping group - direct link
-                                                const group = order.shippingGroups[0]
-                                                return group.carrierTrackingUrl ? (
-                                                  <a
-                                                    href={group.carrierTrackingUrl}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="px-4 py-2.5 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm"
-                                                  >
-                                                    Track shipment
-                                                  </a>
-                                                ) : null
-                                              } else if (order.trackingNumber && order.carrierTrackingUrl) {
-                                                // Legacy single tracking
-                                                return (
-                                                  <a
-                                                    href={order.carrierTrackingUrl}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="px-4 py-2.5 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm"
-                                                  >
-                                                    Track order
-                                                  </a>
-                                                )
-                                              }
-                                              return null
-                                            })()}
-                                            {order.status !== 'Cancelled' && order.canReturn && (
-                                              <button className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm">
-                                                Return items
-                                              </button>
-                                            )}
-                                            {order.status !== 'Cancelled' && order.canCancel && (
-                                              <button className="px-4 py-2 bg-white border border-red-300 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors shadow-sm">
-                                                Cancel order
-                                              </button>
-                                            )}
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                )}
-                              </React.Fragment>
-                            )
-                          })}
-                        </tbody>
-                      </table>
+                  <div className="divide-y divide-brand-gray-200">
+                    {recentOrders.slice(0, 5).map((order, idx) => (
+                      <OrderSummaryCard key={idx} order={order} variant="compact" />
+                    ))}
                   </div>
                 </div>
 
@@ -2338,7 +3131,7 @@ export default function MyAccountPage() {
 
                     {/* Email & Phone */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
+                      <div id="email">
                         <label className="block text-sm font-medium text-brand-black mb-2">Email Address</label>
                         <div className="flex items-center gap-3">
                           {isEditingPersonalInfo ? (
@@ -2360,19 +3153,17 @@ export default function MyAccountPage() {
                                 <span className="text-xs font-medium">Verified</span>
                               </div>
                             ) : (
-                              <button 
-                                onClick={() => {
-                                  alert('Email verification would be triggered here')
-                                }}
+                              <Link
+                                href="/account/account-details#email"
                                 className="text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline font-medium flex-shrink-0 whitespace-nowrap"
                               >
                                 Verify Email
-                              </button>
+                              </Link>
                             )
                           )}
                         </div>
                       </div>
-                      <div>
+                      <div id="phone">
                         <label className="block text-sm font-medium text-brand-black mb-2">Phone Number</label>
                         <div className="flex items-center gap-3">
                           {isEditingPersonalInfo ? (
@@ -2407,14 +3198,12 @@ export default function MyAccountPage() {
                                 <span className="text-xs font-medium">Verified</span>
                               </div>
                             ) : (
-                              <button 
-                                onClick={() => {
-                                  alert('Phone verification would be triggered here')
-                                }}
+                              <Link
+                                href="/account/account-details#phone"
                                 className="text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline font-medium flex-shrink-0 whitespace-nowrap"
                               >
                                 Verify Phone
-                              </button>
+                              </Link>
                             )
                           )}
                         </div>
@@ -2502,16 +3291,16 @@ export default function MyAccountPage() {
                   </div>
                 </div>
 
-                {/* Interests Card */}
+                {/* Interests & Preferences Card */}
                 <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm">
                   <div className="flex items-center justify-between p-6 border-b border-brand-gray-200">
                     <div>
-                      <h3 className="text-base font-semibold text-brand-black mb-1.5">Your Interests</h3>
-                      <p className="text-sm text-brand-gray-600">Add your design interests to get personalized content, recommendations & offers</p>
+                      <h3 className="text-base font-semibold text-brand-black mb-1.5">Interests & Preferences</h3>
+                      <p className="text-sm text-brand-gray-600">Add your design interests and manage your shopping preferences</p>
                     </div>
-                    {!isEditingInterests ? (
+                    {!isEditingInterestsAndPreferences ? (
                       <button 
-                        onClick={() => setIsEditingInterests(true)}
+                        onClick={() => setIsEditingInterestsAndPreferences(true)}
                         className="px-4 py-2 text-sm font-medium bg-white border border-brand-gray-300 text-brand-black rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
                       >
                         Edit
@@ -2520,8 +3309,8 @@ export default function MyAccountPage() {
                       <div className="flex gap-2">
                         <button 
                           onClick={() => {
-                            setIsEditingInterests(false)
-                            showToastMessage('Interests saved successfully')
+                            setIsEditingInterestsAndPreferences(false)
+                            showToastMessage('Interests & preferences saved successfully')
                           }}
                           className="px-4 py-2 text-sm font-medium bg-brand-blue-500 text-white hover:bg-brand-blue-600 rounded-lg transition-colors shadow-sm"
                         >
@@ -2529,12 +3318,22 @@ export default function MyAccountPage() {
                         </button>
                         <button 
                           onClick={() => {
-                            setIsEditingInterests(false)
+                            setIsEditingInterestsAndPreferences(false)
                             setInterestsForm({
                               designStyles: ['Minimalist', 'Geometric'],
                               roomTypes: ['Living Room', 'Office'],
                               materials: ['Ceramic'],
                               aesthetics: ['Modern'],
+                            })
+                            setPreferencesForm({
+                              productCategories: ['Geometric', 'Sets'],
+                              shoppingPreferences: 'unisex',
+                            })
+                            setMeasuresForm({
+                              roomWidth: '',
+                              roomLength: '',
+                              ceilingHeight: '',
+                              preferredProductSize: '',
                             })
                           }}
                           className="px-4 py-2 text-sm font-medium bg-white border border-brand-gray-300 text-brand-black hover:bg-brand-gray-50 rounded-lg transition-colors shadow-sm"
@@ -2545,32 +3344,94 @@ export default function MyAccountPage() {
                     )}
                   </div>
                   <div className="p-6 space-y-6">
-                    {/* Design Styles */}
+                    {/* Interests */}
                     <div>
-                      <label className="block text-sm font-semibold text-brand-black mb-3 uppercase tracking-wider">Design Styles</label>
-                      {!isEditingInterests ? (
+                      <label className="block text-sm font-semibold text-brand-black mb-3 uppercase tracking-wider">Your Interests</label>
+                      {!isEditingInterestsAndPreferences ? (
                         <div className="flex flex-wrap gap-2">
-                          {interestsForm.designStyles.length > 0 ? (
-                            interestsForm.designStyles.map((style) => (
-                              <span key={style} className="px-3 py-1.5 bg-brand-blue-50 text-brand-blue-700 text-sm font-medium rounded-lg">
-                                {style}
+                          {(() => {
+                            const allInterests = [
+                              ...interestsForm.designStyles,
+                              ...interestsForm.roomTypes,
+                              ...interestsForm.materials,
+                              ...interestsForm.aesthetics,
+                            ]
+                            return allInterests.length > 0 ? (
+                              allInterests.map((interest) => (
+                                <span key={interest} className="px-3 py-1.5 bg-brand-blue-50 text-brand-blue-700 text-sm font-medium rounded-lg">
+                                  {interest}
                               </span>
                             ))
                           ) : (
-                            <span className="text-sm text-brand-gray-500">No design styles selected</span>
-                          )}
+                              <span className="text-sm text-brand-gray-500">No interests selected</span>
+                            )
+                          })()}
                         </div>
                       ) : (
                         <div className="space-y-3">
                           <div className="flex flex-wrap gap-2">
                             {interestsForm.designStyles.map((style) => (
-                              <span key={style} className="px-3 py-1.5 bg-brand-blue-500 text-white text-sm font-medium rounded-lg flex items-center gap-2">
+                              <span key={`design-${style}`} className="px-3 py-1.5 bg-brand-blue-500 text-white text-sm font-medium rounded-lg flex items-center gap-2">
                                 {style}
                                 <button
                                   onClick={() => {
                                     setInterestsForm({
                                       ...interestsForm,
                                       designStyles: interestsForm.designStyles.filter(s => s !== style)
+                                    })
+                                  }}
+                                  className="hover:bg-brand-blue-600 rounded-full p-0.5 transition-colors"
+                                >
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </span>
+                            ))}
+                            {interestsForm.roomTypes.map((room) => (
+                              <span key={`room-${room}`} className="px-3 py-1.5 bg-brand-blue-500 text-white text-sm font-medium rounded-lg flex items-center gap-2">
+                                {room}
+                                <button
+                                  onClick={() => {
+                                    setInterestsForm({
+                                      ...interestsForm,
+                                      roomTypes: interestsForm.roomTypes.filter(r => r !== room)
+                                    })
+                                  }}
+                                  className="hover:bg-brand-blue-600 rounded-full p-0.5 transition-colors"
+                                >
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </span>
+                            ))}
+                            {interestsForm.materials.map((material) => (
+                              <span key={`material-${material}`} className="px-3 py-1.5 bg-brand-blue-500 text-white text-sm font-medium rounded-lg flex items-center gap-2">
+                                {material}
+                                <button
+                                  onClick={() => {
+                                    setInterestsForm({
+                                      ...interestsForm,
+                                      materials: interestsForm.materials.filter(m => m !== material)
+                                    })
+                                  }}
+                                  className="hover:bg-brand-blue-600 rounded-full p-0.5 transition-colors"
+                                >
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </span>
+                            ))}
+                            {interestsForm.aesthetics.map((aesthetic) => (
+                              <span key={`aesthetic-${aesthetic}`} className="px-3 py-1.5 bg-brand-blue-500 text-white text-sm font-medium rounded-lg flex items-center gap-2">
+                                {aesthetic}
+                                <button
+                                  onClick={() => {
+                                    setInterestsForm({
+                                      ...interestsForm,
+                                      aesthetics: interestsForm.aesthetics.filter(a => a !== aesthetic)
                                     })
                                   }}
                                   className="hover:bg-brand-blue-600 rounded-full p-0.5 transition-colors"
@@ -2595,238 +3456,10 @@ export default function MyAccountPage() {
                       )}
                     </div>
 
-                    {/* Room Types */}
-                    <div>
-                      <label className="block text-sm font-semibold text-brand-black mb-3 uppercase tracking-wider">Room Types</label>
-                      {!isEditingInterests ? (
-                        <div className="flex flex-wrap gap-2">
-                          {interestsForm.roomTypes.length > 0 ? (
-                            interestsForm.roomTypes.map((room) => (
-                              <span key={room} className="px-3 py-1.5 bg-brand-blue-50 text-brand-blue-700 text-sm font-medium rounded-lg">
-                                {room}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-sm text-brand-gray-500">No room types selected</span>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          <div className="flex flex-wrap gap-2">
-                            {interestsForm.roomTypes.map((room) => (
-                              <span key={room} className="px-3 py-1.5 bg-brand-blue-500 text-white text-sm font-medium rounded-lg flex items-center gap-2">
-                                {room}
-                                <button
-                                  onClick={() => {
-                                    setInterestsForm({
-                                      ...interestsForm,
-                                      roomTypes: interestsForm.roomTypes.filter(r => r !== room)
-                                    })
-                                  }}
-                                  className="hover:bg-brand-blue-600 rounded-full p-0.5 transition-colors"
-                                >
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-                          <button
-                            onClick={() => {
-                              setInterestsModalCategory('roomTypes')
-                              setShowInterestsModal(true)
-                            }}
-                            className="text-sm text-brand-blue-500 hover:text-brand-blue-600 hover:underline font-medium"
-                          >
-                            + Add more
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Materials */}
-                    <div>
-                      <label className="block text-sm font-semibold text-brand-black mb-3 uppercase tracking-wider">Materials</label>
-                      {!isEditingInterests ? (
-                        <div className="flex flex-wrap gap-2">
-                          {interestsForm.materials.length > 0 ? (
-                            interestsForm.materials.map((material) => (
-                              <span key={material} className="px-3 py-1.5 bg-brand-blue-50 text-brand-blue-700 text-sm font-medium rounded-lg">
-                                {material}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-sm text-brand-gray-500">No materials selected</span>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          <div className="flex flex-wrap gap-2">
-                            {interestsForm.materials.map((material) => (
-                              <span key={material} className="px-3 py-1.5 bg-brand-blue-500 text-white text-sm font-medium rounded-lg flex items-center gap-2">
-                                {material}
-                                <button
-                                  onClick={() => {
-                                    setInterestsForm({
-                                      ...interestsForm,
-                                      materials: interestsForm.materials.filter(m => m !== material)
-                                    })
-                                  }}
-                                  className="hover:bg-brand-blue-600 rounded-full p-0.5 transition-colors"
-                                >
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-                          <button
-                            onClick={() => {
-                              setInterestsModalCategory('materials')
-                              setShowInterestsModal(true)
-                            }}
-                            className="text-sm text-brand-blue-500 hover:text-brand-blue-600 hover:underline font-medium"
-                          >
-                            + Add more
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Aesthetics */}
-                    <div>
-                      <label className="block text-sm font-semibold text-brand-black mb-3 uppercase tracking-wider">Aesthetics</label>
-                      {!isEditingInterests ? (
-                        <div className="flex flex-wrap gap-2">
-                          {interestsForm.aesthetics.length > 0 ? (
-                            interestsForm.aesthetics.map((aesthetic) => (
-                              <span key={aesthetic} className="px-3 py-1.5 bg-brand-blue-50 text-brand-blue-700 text-sm font-medium rounded-lg">
-                                {aesthetic}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-sm text-brand-gray-500">No aesthetics selected</span>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          <div className="flex flex-wrap gap-2">
-                            {interestsForm.aesthetics.map((aesthetic) => (
-                              <span key={aesthetic} className="px-3 py-1.5 bg-brand-blue-500 text-white text-sm font-medium rounded-lg flex items-center gap-2">
-                                {aesthetic}
-                                <button
-                                  onClick={() => {
-                                    setInterestsForm({
-                                      ...interestsForm,
-                                      aesthetics: interestsForm.aesthetics.filter(a => a !== aesthetic)
-                                    })
-                                  }}
-                                  className="hover:bg-brand-blue-600 rounded-full p-0.5 transition-colors"
-                                >
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-                          <button
-                            onClick={() => {
-                              setInterestsModalCategory('aesthetics')
-                              setShowInterestsModal(true)
-                            }}
-                            className="text-sm text-brand-blue-500 hover:text-brand-blue-600 hover:underline font-medium"
-                          >
-                            + Add more
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Preferences Card */}
-                <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm">
-                  <div className="flex items-center justify-between p-6 border-b border-brand-gray-200">
-                    <div>
-                      <h3 className="text-base font-semibold text-brand-black mb-1.5">Your Preferences</h3>
-                      <p className="text-sm text-brand-gray-600">Manage your shopping preferences and newsletter subscription</p>
-                    </div>
-                    {!isEditingPreferences ? (
-                      <button 
-                        onClick={() => setIsEditingPreferences(true)}
-                        className="px-4 py-2 text-sm font-medium bg-white border border-brand-gray-300 text-brand-black rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
-                      >
-                        Edit
-                      </button>
-                    ) : (
-                      <div className="flex gap-2">
-                        <button 
-                          onClick={() => {
-                            setIsEditingPreferences(false)
-                            showToastMessage('Preferences saved successfully')
-                          }}
-                          className="px-4 py-2 text-sm font-medium bg-brand-blue-500 text-white hover:bg-brand-blue-600 rounded-lg transition-colors shadow-sm"
-                        >
-                          Save
-                        </button>
-                        <button 
-                          onClick={() => {
-                            setIsEditingPreferences(false)
-                            setPreferencesForm({
-                              newsletter: true,
-                              productCategories: ['Geometric', 'Sets'],
-                              shoppingPreferences: 'unisex',
-                              preferredStore: '',
-                              sizePreference: '',
-                            })
-                          }}
-                          className="px-4 py-2 text-sm font-medium bg-white border border-brand-gray-300 text-brand-black hover:bg-brand-gray-50 rounded-lg transition-colors shadow-sm"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-6 space-y-6">
-                    {/* Newsletter Subscription */}
-                    <div>
-                      <label className="block text-sm font-semibold text-brand-black mb-3 uppercase tracking-wider">Market Street Newsletter</label>
-                      <div className="flex items-start gap-3">
-                        <input
-                          type="checkbox"
-                          checked={preferencesForm.newsletter}
-                          onChange={(e) => {
-                            if (!isEditingPreferences) return
-                            setPreferencesForm({ ...preferencesForm, newsletter: e.target.checked })
-                          }}
-                          disabled={!isEditingPreferences}
-                          className="mt-1 w-4 h-4 text-brand-blue-500 border-brand-gray-300 rounded focus:ring-brand-blue-500 disabled:opacity-50"
-                        />
-                        <div className="flex-1">
-                          <p className="text-sm text-brand-gray-700 mb-2">
-                            Sign me up to Market Street newsletter, featuring exclusive offers, latest product info, news about upcoming collections and more. Please see our{' '}
-                            <a href="#" className="text-brand-blue-500 hover:underline">Terms & Conditions</a> and{' '}
-                            <a href="#" className="text-brand-blue-500 hover:underline">Privacy Policy</a> for more details.
-                          </p>
-                          {preferencesForm.newsletter && (
-                            <div className="mt-3 px-4 py-2 bg-brand-gray-50 border border-brand-gray-200 rounded-lg">
-                              <p className="text-sm text-brand-gray-700 font-medium">You are currently receiving our newsletter.</p>
-                              {isEditingPreferences && (
-                                <p className="text-xs text-brand-gray-500 mt-1">* To unsubscribe, please untick the checkbox</p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
                     {/* Product Categories */}
                     <div>
                       <label className="block text-sm font-semibold text-brand-black mb-3 uppercase tracking-wider">Product Categories</label>
-                      {!isEditingPreferences ? (
+                      {!isEditingInterestsAndPreferences ? (
                         <div className="flex flex-wrap gap-2">
                           {preferencesForm.productCategories.length > 0 ? (
                             preferencesForm.productCategories.map((category) => (
@@ -2876,7 +3509,7 @@ export default function MyAccountPage() {
                     {/* Shopping Preferences */}
                     <div>
                       <label className="block text-sm font-semibold text-brand-black mb-3 uppercase tracking-wider">Shopping Preferences</label>
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         {[
                           { value: 'womens', label: "Women's" },
                           { value: 'mens', label: "Men's" },
@@ -2885,15 +3518,15 @@ export default function MyAccountPage() {
                           <button
                             key={option.value}
                             onClick={() => {
-                              if (!isEditingPreferences) return
+                              if (!isEditingInterestsAndPreferences) return
                               setPreferencesForm({ ...preferencesForm, shoppingPreferences: option.value as any })
                             }}
-                            disabled={!isEditingPreferences}
+                            disabled={!isEditingInterestsAndPreferences}
                             className={`px-4 py-3 rounded-lg border-2 text-sm font-medium transition-all shadow-sm ${
                               preferencesForm.shoppingPreferences === option.value
                                 ? 'bg-brand-blue-500 text-white border-brand-blue-500'
                                 : 'bg-white text-brand-black border-brand-gray-200 hover:border-brand-gray-300'
-                            } ${!isEditingPreferences ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                            } ${!isEditingInterestsAndPreferences ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                           >
                             {option.label}
                           </button>
@@ -2901,52 +3534,82 @@ export default function MyAccountPage() {
                       </div>
                     </div>
 
-                    {/* Size Preference */}
+                    {/* Measures */}
                     <div>
-                      <label className="block text-sm font-medium text-brand-black mb-2">Size Preference</label>
-                      {isEditingPreferences ? (
-                        <div className="relative">
-                          <select
-                            value={preferencesForm.sizePreference}
-                            onChange={(e) => setPreferencesForm({ ...preferencesForm, sizePreference: e.target.value })}
-                            className="w-full px-3 py-2 pr-10 border border-brand-gray-300 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent appearance-none bg-white"
-                          >
-                            <option value="">No preference</option>
-                            <option value="small">Small (S)</option>
-                            <option value="medium">Medium (M)</option>
-                            <option value="large">Large (L)</option>
-                            <option value="xl">Extra Large (XL)</option>
-                          </select>
-                          <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                            <svg className="w-4 h-4 text-brand-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
+                      <label className="block text-sm font-semibold text-brand-black mb-3 uppercase tracking-wider">Measures</label>
+                      {!isEditingInterestsAndPreferences ? (
+                        <div className="space-y-2">
+                          {measuresForm.roomWidth || measuresForm.roomLength ? (
+                            <div className="text-sm text-brand-gray-700">
+                              <span className="font-medium">Room dimensions: </span>
+                              {measuresForm.roomWidth && measuresForm.roomLength 
+                                ? `${measuresForm.roomWidth}" × ${measuresForm.roomLength}"`
+                                : measuresForm.roomWidth || measuresForm.roomLength}
                           </div>
+                          ) : null}
+                          {measuresForm.ceilingHeight && (
+                            <div className="text-sm text-brand-gray-700">
+                              <span className="font-medium">Ceiling height: </span>
+                              {measuresForm.ceilingHeight}&quot;
                         </div>
-                      ) : (
-                        <div className="px-0 py-2 text-sm text-brand-gray-500">
-                          {preferencesForm.sizePreference 
-                            ? preferencesForm.sizePreference.charAt(0).toUpperCase() + preferencesForm.sizePreference.slice(1)
-                            : 'No preference'}
+                          )}
+                          {measuresForm.preferredProductSize && (
+                            <div className="text-sm text-brand-gray-700">
+                              <span className="font-medium">Preferred product size: </span>
+                              {measuresForm.preferredProductSize}
                         </div>
                       )}
-                      <p className="text-xs text-brand-gray-500 mt-1">Provide your size preference to have it preselected when you shop</p>
+                          {!measuresForm.roomWidth && !measuresForm.roomLength && !measuresForm.ceilingHeight && !measuresForm.preferredProductSize && (
+                            <span className="text-sm text-brand-gray-500">No measures provided</span>
+                          )}
                     </div>
-
-                    {/* Preferred Store */}
+                      ) : (
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-brand-black mb-2">Preferred Store</label>
-                      {isEditingPreferences ? (
+                              <label className="block text-sm font-medium text-brand-black mb-2">Room Width (inches)</label>
+                              <input
+                                type="text"
+                                value={measuresForm.roomWidth}
+                                onChange={(e) => setMeasuresForm({ ...measuresForm, roomWidth: e.target.value })}
+                                placeholder="e.g., 120"
+                                className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-brand-black mb-2">Room Length (inches)</label>
+                              <input
+                                type="text"
+                                value={measuresForm.roomLength}
+                                onChange={(e) => setMeasuresForm({ ...measuresForm, roomLength: e.target.value })}
+                                placeholder="e.g., 180"
+                                className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-brand-black mb-2">Ceiling Height (inches)</label>
+                            <input
+                              type="text"
+                              value={measuresForm.ceilingHeight}
+                              onChange={(e) => setMeasuresForm({ ...measuresForm, ceilingHeight: e.target.value })}
+                              placeholder="e.g., 96"
+                              className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-brand-black mb-2">Preferred Product Size</label>
                         <div className="relative">
                           <select
-                            value={preferencesForm.preferredStore}
-                            onChange={(e) => setPreferencesForm({ ...preferencesForm, preferredStore: e.target.value })}
+                                value={measuresForm.preferredProductSize}
+                                onChange={(e) => setMeasuresForm({ ...measuresForm, preferredProductSize: e.target.value })}
                             className="w-full px-3 py-2 pr-10 border border-brand-gray-300 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent appearance-none bg-white"
                           >
-                            <option value="">No preferred store selected</option>
-                            <option value="store-1">San Francisco Store</option>
-                            <option value="store-2">New York Store</option>
-                            <option value="store-3">Los Angeles Store</option>
+                                <option value="">No preference</option>
+                                <option value="Small">Small</option>
+                                <option value="Medium">Medium</option>
+                                <option value="Large">Large</option>
+                                <option value="Extra Large">Extra Large</option>
                           </select>
                           <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                             <svg className="w-4 h-4 text-brand-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2954,14 +3617,16 @@ export default function MyAccountPage() {
                             </svg>
                           </div>
                         </div>
-                      ) : (
-                        <div className="px-0 py-2 text-sm text-brand-gray-500">{preferencesForm.preferredStore || 'No preferred store selected'}</div>
+                            <p className="text-xs text-brand-gray-500 mt-1">Help us recommend products that fit your space</p>
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>
                 </div>
 
-                {/* Profile Visibility Card */}
+                {/* Profile Visibility Card - Hidden but can be enabled by setting showProfileVisibility to true */}
+                {showProfileVisibility && (
                 <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm">
                   <div className="flex items-center justify-between p-6 border-b border-brand-gray-200">
                     <div>
@@ -3074,26 +3739,7 @@ export default function MyAccountPage() {
                     </div>
                   </div>
                 </div>
-
-                {/* Password & Security Card */}
-                <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm">
-                  <div className="p-6 border-b border-brand-gray-200">
-                    <h3 className="text-base font-semibold text-brand-black">Password & Security</h3>
-                  </div>
-                  <div className="p-6">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <div className="mb-1">
-                          <p className="text-sm font-medium text-brand-black">Password</p>
-                        </div>
-                        <p className="text-sm text-brand-gray-600">Last changed 3 months ago</p>
-                      </div>
-                      <button className="px-4 py-2 text-sm font-medium bg-white border border-brand-gray-300 text-brand-black hover:bg-brand-gray-50 rounded-lg transition-colors shadow-sm whitespace-nowrap">
-                        Change password
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                )}
 
                 {/* Marketing and Communication Preferences Card */}
                 <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm">
@@ -3349,6 +3995,147 @@ export default function MyAccountPage() {
                         </div>
                       </div>
                     </div>
+
+                    {/* Legal Disclaimer */}
+                    <div className="pt-4 border-t border-brand-gray-200">
+                      <p className="text-sm text-brand-gray-700 leading-relaxed">
+                        By enabling these communication preferences, you agree to receive marketing communications from Market Street, including exclusive offers, latest product info, news about upcoming collections and more. Please see our{' '}
+                        <a href="/terms" className="text-brand-blue-500 hover:text-brand-blue-600 hover:underline">Terms & Conditions</a> and{' '}
+                        <a href="/privacy" className="text-brand-blue-500 hover:text-brand-blue-600 hover:underline">Privacy Policy</a> for more details.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Password & Security Card */}
+                <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm">
+                  <div className="p-6 border-b border-brand-gray-200">
+                    <h3 className="text-base font-semibold text-brand-black">Password & Security</h3>
+                  </div>
+                  <div className="p-6 space-y-6">
+                    {/* Password Section */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="mb-1">
+                          <p className="text-sm font-medium text-brand-black">Password</p>
+                        </div>
+                        <p className="text-sm text-brand-gray-600">Last changed 3 months ago</p>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          setPasswordForm({
+                            currentPassword: '',
+                            newPassword: '',
+                            confirmPassword: '',
+                          })
+                          setShowChangePasswordModal(true)
+                        }}
+                        className="px-4 py-2 text-sm font-medium bg-white border border-brand-gray-300 text-brand-black hover:bg-brand-gray-50 rounded-lg transition-colors shadow-sm whitespace-nowrap"
+                      >
+                        Change password
+                      </button>
+                    </div>
+
+                    {/* Passkeys Section */}
+                    <div className="pt-6 border-t border-brand-gray-200">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h4 className="text-sm font-semibold text-brand-black mb-1">Passkeys</h4>
+                          <p className="text-xs text-brand-gray-600">Sign in securely without passwords using your device</p>
+                        </div>
+                        <button 
+                          onClick={() => setShowAddPasskeyModal(true)}
+                          className="px-4 py-2 text-sm font-medium bg-brand-blue-500 text-white rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm whitespace-nowrap"
+                        >
+                          Add passkey
+                        </button>
+                      </div>
+
+                      {passkeys.length === 0 ? (
+                        <div className="text-center py-8 border border-brand-gray-200 rounded-lg bg-brand-gray-50">
+                          <svg className="w-12 h-12 text-brand-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                          </svg>
+                          <p className="text-sm font-medium text-brand-black mb-2">No passkeys set up</p>
+                          <p className="text-xs text-brand-gray-600 mb-4">Add a passkey to sign in faster and more securely</p>
+                          <button 
+                            onClick={() => setShowAddPasskeyModal(true)}
+                            className="px-4 py-2 text-sm font-medium bg-brand-blue-500 text-white rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm"
+                          >
+                            Get Started
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {passkeys.map((passkey) => (
+                            <div key={passkey.id} className="flex items-center justify-between p-4 border border-brand-gray-200 rounded-lg">
+                              <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 bg-brand-blue-100 rounded-lg flex items-center justify-center">
+                                  {passkey.deviceType === 'device' ? (
+                                    <svg className="w-6 h-6 text-brand-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                    </svg>
+                                  ) : (
+                                    <svg className="w-6 h-6 text-brand-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                    </svg>
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium text-brand-black">{passkey.name}</p>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <p className="text-xs text-brand-gray-600">Created {new Date(passkey.createdAt).toLocaleDateString()}</p>
+                                    {passkey.lastUsed && (
+                                      <>
+                                        <span className="text-xs text-brand-gray-400">•</span>
+                                        <p className="text-xs text-brand-gray-600">Last used {new Date(passkey.lastUsed).toLocaleDateString()}</p>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setPasskeyToRemove(passkey.id)
+                                  setShowRemovePasskeyModal(true)
+                                }}
+                                className="text-sm text-red-600 hover:text-red-700 hover:underline font-medium"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      
+                      {/* About Passkeys Info */}
+                      <div className="mt-4 p-3 bg-brand-blue-50 border border-brand-blue-200 rounded-lg">
+                        <p className="text-xs font-medium text-brand-blue-800 mb-2">About Passkeys</p>
+                        <p className="text-xs text-brand-blue-700 mb-2">
+                          Passkeys use biometric authentication (Face ID, Touch ID, or Windows Hello) or your device PIN to sign in securely without passwords.
+                        </p>
+                        <div className="space-y-1.5 text-xs text-brand-blue-700">
+                          <div className="flex items-start gap-2">
+                            <svg className="w-4 h-4 text-brand-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            <p>More secure than passwords</p>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <svg className="w-4 h-4 text-brand-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            <p>Faster sign-in experience</p>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <svg className="w-4 h-4 text-brand-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            <p>Works across all your devices</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -3378,598 +4165,125 @@ export default function MyAccountPage() {
             )}
 
             {/* Order History Section */}
-            {activeSection === 'order-history' && (
+            {activeSection === 'order-history' && (() => {
+              // Guard for undefined/null orders array
+              if (!recentOrders || !Array.isArray(recentOrders)) {
+                return (
               <div className="space-y-5">
-                {/* Order History Header Card */}
-                <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm">
-                  <div className="flex items-center justify-between p-6 border-b border-brand-gray-200">
-                    <div>
-                      <h2 className="text-2xl font-semibold text-brand-black mb-1.5">Order History</h2>
-                      <p className="text-sm text-brand-gray-600">View and track your orders</p>
+                    <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-12 text-center">
+                      <p className="text-brand-gray-600">No orders available.</p>
                     </div>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="Search orders"
-                        className="w-[212px] pl-10 pr-4 py-2 border border-brand-gray-200 rounded-lg text-sm text-brand-black placeholder-brand-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent shadow-sm"
-                      />
-                      <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
                     </div>
-                  </div>
+                )
+              }
 
-                  {/* Orders Table */}
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-brand-gray-50 border-b border-brand-gray-200">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-sm font-medium text-brand-black w-[120px]">Order Number</th>
-                          <th className="px-6 py-3 text-left text-sm font-medium text-brand-black w-[200px]">Status</th>
-                          <th className="px-6 py-3 text-left text-sm font-medium text-brand-black">Method</th>
-                          <th className="px-6 py-3 text-left text-sm font-medium text-brand-black w-[100px]">Amount</th>
-                          <th className="px-6 py-3 text-left text-sm font-medium text-brand-black w-[130px]"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-brand-gray-200">
-                        {recentOrders.map((order, idx) => {
-                          const isExpanded = expandedOrders.has(order.orderNumber)
-                          return (
-                            <React.Fragment key={idx}>
-                              <tr className="hover:bg-brand-gray-50 transition-colors">
-                                <td className="px-6 py-4 text-sm text-brand-black">{order.orderNumber}</td>
-                                <td className="px-6 py-4">
-                                  <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold ${
-                                    order.status === 'Delivered' || order.status === 'Picked Up'
-                                      ? 'bg-green-600 text-white'
-                                      : order.status === 'Partially Delivered'
-                                      ? 'bg-yellow-100 text-yellow-700'
-                                      : order.status === 'In Transit' || order.status === 'Ready for Pickup'
-                                      ? 'bg-blue-100 text-blue-700'
-                                      : order.status === 'Cancelled'
-                                      ? 'bg-red-100 text-red-700'
-                                      : 'bg-brand-gray-100 text-brand-gray-700'
-                                  }`}>
-                                    {(order.status === 'Delivered' || order.status === 'Picked Up') && (
-                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                      </svg>
-                                    )}
-                                    {order.status === 'Cancelled' && (
-                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                      </svg>
-                                    )}
-                                    {order.status}
-                                  </span>
-                                </td>
-                                <td className="px-6 py-4 text-sm text-brand-black">{order.method}</td>
-                                <td className="px-6 py-4 text-sm text-brand-black">{order.amount}</td>
-                                <td className="px-6 py-4">
-                                  <button 
-                                    onClick={() => toggleOrderDetails(order.orderNumber)}
-                                    className="px-4 py-2 bg-white border border-brand-gray-300 text-sm font-medium text-brand-black rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm whitespace-nowrap"
-                                  >
-                                    {isExpanded ? 'Hide Details' : 'View Details'}
-                                  </button>
-                                </td>
-                              </tr>
-                              {isExpanded && order.items && (
-                                <tr>
-                                    <td colSpan={5} className="px-6 py-8 bg-brand-gray-50 animate-order-expand">
-                                      <div className="space-y-6">
-                                        {/* Header with View Full Details Link */}
-                                        <div className="flex items-center justify-between pb-4 border-b border-brand-gray-200">
-                                          <h3 className="text-lg font-semibold text-brand-black">Order Details</h3>
-                                          <Link
-                                            href={`/order/${order.orderNumber}`}
-                                            className="text-sm text-brand-blue-500 hover:text-brand-blue-600 hover:underline font-medium flex items-center gap-1.5"
-                                          >
-                                            View Full Order Details
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                            </svg>
-                                          </Link>
-                                        </div>
+              // Extract unique years from orders
+              const extractYear = (dateStr: string | undefined): number | null => {
+                if (!dateStr || typeof dateStr !== 'string') return null
+                // Parse date string like "Sep 10, 2024" or "2024-09-10"
+                const yearMatch = dateStr.match(/\b(20\d{2})\b/)
+                return yearMatch ? parseInt(yearMatch[1], 10) : null
+              }
 
-                                        {/* Order Summary and Payment Method - At Top */}
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-6 border-b border-brand-gray-200">
-                                          {/* Order Summary */}
-                                          <div>
-                                            <h4 className="text-sm font-semibold text-brand-black mb-3">Order Summary</h4>
-                                            <div className="bg-white rounded-lg border border-brand-gray-200 p-4 space-y-2">
-                                              <div className="flex justify-between text-sm">
-                                                <span className="text-brand-gray-600">Subtotal</span>
-                                                <span className="text-brand-black">${order.subtotal?.toFixed(2)}</span>
-                                              </div>
-                                              {order.promotions && order.promotions !== 0 && (
-                                                <div className="flex justify-between text-sm">
-                                                  <span className="text-brand-gray-600">Promotions</span>
-                                                  <span className="text-green-600">-${Math.abs(order.promotions || 0).toFixed(2)}</span>
-                                                </div>
-                                              )}
-                                              <div className="flex justify-between text-sm">
-                                                <span className="text-brand-gray-600">Shipping</span>
-                                                <span className="text-brand-black">
-                                                  {order.shipping === 0 ? '$0.00' : `$${order.shipping?.toFixed(2)}`}
-                                                </span>
-                                              </div>
-                                              <div className="flex justify-between text-sm">
-                                                <span className="text-brand-gray-600">Tax</span>
-                                                <span className="text-brand-black">${order.tax?.toFixed(2)}</span>
-                                              </div>
-                                              <div className="pt-3 border-t border-brand-gray-200">
-                                                <div className="flex justify-between">
-                                                  <span className="text-base font-semibold text-brand-black">Total</span>
-                                                  <span className="text-base font-semibold text-brand-black">${order.total?.toFixed(2)}</span>
-                                                </div>
-                                              </div>
-                                            </div>
-                                          </div>
-                                          
-                                          {/* Payment Method */}
-                                          <div>
-                                            <h4 className="text-sm font-semibold text-brand-black mb-3">Payment Method</h4>
-                                            <div className="bg-white rounded-lg border border-brand-gray-200 p-4">
-                                              <p className="text-sm text-brand-gray-700">{order.paymentInfo}</p>
-                                            </div>
-                                            
-                                            {/* Return Information */}
-                                            {order.canReturn && order.returnDeadline && (
-                                              <div className="mt-4">
-                                                <p className="text-sm text-brand-gray-700">
-                                                  Eligible for return until {order.returnDeadline}
-                                                </p>
-                                              </div>
-                                            )}
-                                          </div>
-                                        </div>
+              const availableYears = Array.from(
+                new Set(
+                  recentOrders
+                    .map(order => extractYear(order?.orderDate))
+                    .filter((year): year is number => year !== null)
+                )
+              ).sort((a, b) => b - a) // Sort descending (newest first)
 
-                                        {/* Items Ordered - Grouped by Shipment */}
-                                        <div>
-                                          <h3 className="text-lg font-semibold text-brand-black mb-4">Items Ordered</h3>
-                                          {(() => {
-                                            // Group items by shipping group ID (which represents a shipment/address)
-                                            const shippingGroupsMap = new Map(
-                                              order.shippingGroups?.map(sg => [sg.groupId, sg]) || []
-                                            )
-                                            
-                                            // Group items by shippingGroup ID
-                                            const groupedItems = order.items.reduce((acc, item) => {
-                                              const groupKey = item.shippingGroup || 'default'
-                                              if (!acc[groupKey]) {
-                                                const shippingGroup = shippingGroupsMap.get(groupKey)
-                                                acc[groupKey] = {
-                                                  groupId: groupKey,
-                                                  items: []
-                                                }
-                                              }
-                                              acc[groupKey].items.push(item)
-                                              return acc
-                                            }, {} as Record<string, { groupId: string; items: typeof order.items }>)
+              // Filter orders by year and search term
+              const filteredOrders = recentOrders.filter(order => {
+                if (!order) return false
+                // Year filter
+                if (selectedYear !== 'all') {
+                  const orderYear = extractYear(order.orderDate)
+                  if (orderYear !== parseInt(selectedYear, 10)) {
+                    return false
+                  }
+                }
 
-                                            const groups = Object.entries(groupedItems)
-                                            
-                                            return (
-                                              <div className="space-y-6">
-                                                {groups.map(([groupKey, group], groupIdx) => {
-                                                  // Find matching shipping group data
-                                                  const shippingGroup = order.shippingGroups?.find(sg => sg.groupId === groupKey)
-                                                  const shipmentNumber = groupIdx + 1
-                                                  const shipmentAddress = shippingGroup?.shippingAddress || order.shippingAddress
-                                                  
-                                                  return (
-                                                    <div key={groupKey} className={groupIdx > 0 ? 'pt-6 border-t border-brand-gray-200' : ''}>
-                                                      {/* Shipment Header with Status */}
-                                                      <div className="flex items-center justify-between mb-4">
-                                                        <div>
-                                                          <h4 className="text-sm font-semibold text-brand-black mb-1">
-                                                            Shipment {shipmentNumber}
-                                                          </h4>
-                                                          <p className="text-xs text-brand-gray-600">
-                                                            {shipmentAddress}
-                                                          </p>
-                                                        </div>
-                                                        {shippingGroup && (
-                                                          <span className={`text-xs font-semibold px-2 py-1 rounded ${
-                                                            shippingGroup.status === 'Delivered' || shippingGroup.status === 'Picked Up'
-                                                              ? 'bg-green-100 text-green-700'
-                                                              : shippingGroup.status === 'In Transit' || shippingGroup.status === 'Ready for Pickup'
-                                                              ? 'bg-blue-100 text-blue-700'
-                                                              : shippingGroup.status === 'Cancelled'
-                                                              ? 'bg-red-100 text-red-700'
-                                                              : 'bg-gray-100 text-gray-700'
-                                                          }`}>
-                                                            {shippingGroup.status}
-                                                          </span>
-                                                        )}
-                                                      </div>
+                // Search filter
+                if (orderSearchTerm.trim()) {
+                  const searchLower = orderSearchTerm.toLowerCase()
+                  const matchesOrderNumber = order.orderNumber?.toLowerCase().includes(searchLower) || false
+                  const matchesStatus = order.status?.toLowerCase().includes(searchLower) || false
+                  const matchesItems = order.items?.some(item => 
+                    item?.name?.toLowerCase().includes(searchLower)
+                  ) || false
+                  
+                  if (!matchesOrderNumber && !matchesStatus && !matchesItems) {
+                    return false
+                  }
+                }
 
-                                                      {/* Items - Horizontal Layout */}
-                                                      <div className="flex flex-wrap gap-3 mb-4">
-                                                        {group.items.map((item, idx) => (
-                                                          <div key={idx} className="flex flex-col w-24">
-                                                            <div className="w-24 h-24 bg-brand-gray-100 rounded-lg overflow-hidden flex-shrink-0 mb-2">
-                                                              <Image
-                                                                src={item.image}
-                                                                alt={item.name}
-                                                                width={96}
-                                                                height={96}
-                                                                className="w-full h-full object-cover"
-                                                              />
-                                                            </div>
-                                                            <div className="min-w-0">
-                                                              <p className="text-xs font-medium text-brand-black mb-0.5 line-clamp-2">{item.name}</p>
-                                                              {item.color && (
-                                                                <p className="text-xs text-brand-gray-600">Color: {item.color}</p>
-                                                              )}
-                                                              {item.size && (
-                                                                <p className="text-xs text-brand-gray-600">Size: {item.size}</p>
-                                                              )}
-                                                              {item.price && (
-                                                                <div className="flex items-center gap-1.5 mt-1">
-                                                                  {item.originalPrice && item.originalPrice > item.price && (
-                                                                    <span className="text-xs text-brand-gray-500 line-through">
-                                                                      ${item.originalPrice.toFixed(2)}
-                                                                    </span>
-                                                                  )}
-                                                                  <span className="text-xs font-semibold text-brand-black">
-                                                                    ${item.price.toFixed(2)}
-                                                                  </span>
-                                                                </div>
-                                                              )}
-                                                            </div>
-                                                          </div>
-                                                        ))}
-                                                      </div>
+                return true
+              })
 
-                                                      {/* Collapsible Tracking/Shipping or Pickup Info for this group */}
-                                                      {shippingGroup && (
-                                                        <div>
-                                                          <button
-                                                            onClick={() => {
-                                                              const trackingKey = `${order.orderNumber}-${groupKey}`
-                                                              setExpandedTracking(prev => {
-                                                                const newSet = new Set(prev)
-                                                                if (newSet.has(trackingKey)) {
-                                                                  newSet.delete(trackingKey)
-                                                                } else {
-                                                                  newSet.add(trackingKey)
-                                                                }
-                                                                return newSet
-                                                              })
-                                                            }}
-                                                            className="flex items-center justify-between w-full text-left text-sm font-semibold text-brand-black mb-2 hover:text-brand-blue-600 transition-colors"
-                                                          >
-                                                            <span>{shippingGroup.isBOPIS ? 'Pickup Information' : 'Tracking & Shipping Information'}</span>
-                                                            <svg 
-                                                              className={`w-4 h-4 transition-transform ${expandedTracking.has(`${order.orderNumber}-${groupKey}`) ? 'rotate-180' : ''}`}
-                                                              fill="none" 
-                                                              stroke="currentColor" 
-                                                              viewBox="0 0 24 24"
-                                                            >
-                                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                                            </svg>
-                                                          </button>
-                                                          {expandedTracking.has(`${order.orderNumber}-${groupKey}`) && (
-                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-brand-gray-50 rounded-lg p-3">
-                                                          {shippingGroup.isBOPIS ? (
-                                                            <>
-                                                              {/* Pickup Information */}
+              return (
+                <div className="space-y-5">
+                  {/* Order History Header Card */}
+                  <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6 border-b border-brand-gray-200">
                                                               <div>
-                                                                <h5 className="text-xs font-semibold text-brand-black mb-2">Pickup Information</h5>
-                                                                <div className="bg-brand-blue-50 border border-brand-blue-200 rounded-lg p-2 space-y-1.5">
-                                                                  {shippingGroup.pickupLocation && (
-                                                                    <div>
-                                                                      <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Pickup Location</p>
-                                                                      <p className="text-xs font-medium text-brand-black">{shippingGroup.pickupLocation}</p>
+                        <h2 className="text-2xl font-semibold text-brand-black mb-1.5">Order History</h2>
+                        <p className="text-sm text-brand-gray-600">View and track your orders</p>
                                                                     </div>
-                                                                  )}
-                                                                  {shippingGroup.pickupAddress && (
-                                                                    <div>
-                                                                      <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Store Address</p>
-                                                                      <p className="text-xs text-brand-black">{shippingGroup.pickupAddress}</p>
-                                                                    </div>
-                                                                  )}
-                                                                  {shippingGroup.pickupReadyDate && (
-                                                                    <div>
-                                                                      <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Ready for Pickup</p>
-                                                                      <p className="text-xs font-medium text-brand-black">{shippingGroup.pickupReadyDate}</p>
-                                                                    </div>
-                                                                  )}
+                      <div className="flex items-center gap-3 flex-wrap">
+                        {/* Filter by Year */}
+                        <div className="flex items-center gap-2">
+                          <label htmlFor="year-filter" className="text-sm text-brand-gray-600 whitespace-nowrap">
+                            Filter by Year:
+                          </label>
+                          <select
+                            id="year-filter"
+                            value={selectedYear}
+                            onChange={(e) => setSelectedYear(e.target.value)}
+                            className="px-3 py-2 border border-brand-gray-200 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent shadow-sm bg-white min-w-[140px]"
+                          >
+                            <option value="all">All Years</option>
+                            {availableYears.map(year => (
+                              <option key={year} value={year.toString()}>
+                                {year}
+                              </option>
+                            ))}
+                          </select>
                                                                 </div>
-                                                              </div>
-                                                              {/* Pickup Details */}
-                                                              <div>
-                                                                <h5 className="text-xs font-semibold text-brand-black mb-2">Pickup Details</h5>
-                                                                <div className="bg-white rounded-lg border border-brand-gray-200 p-2">
-                                                                  <p className="text-xs text-brand-gray-600">
-                                                                    Your order is ready for pickup. Please bring a valid ID and your order confirmation.
-                                                                  </p>
-                                                                </div>
-                                                              </div>
-                                                            </>
-                                                          ) : (
-                                                            <>
-                                                              {/* Tracking Information */}
-                                                              {shippingGroup.trackingNumber && (
-                                                                <div>
-                                                                  <h5 className="text-xs font-semibold text-brand-black mb-2">Tracking</h5>
-                                                                  <div className="bg-brand-blue-50 border border-brand-blue-200 rounded-lg p-2 space-y-1.5">
-                                                                    <div>
-                                                                      <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Tracking Number</p>
-                                                                      <p className="text-xs font-mono font-medium text-brand-black">{shippingGroup.trackingNumber}</p>
-                                                                    </div>
-                                                                    {shippingGroup.carrier && (
-                                                                      <div>
-                                                                        <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Carrier</p>
-                                                                        <p className="text-xs font-medium text-brand-black">{shippingGroup.carrier}</p>
-                                                                      </div>
-                                                                    )}
-                                                                    {shippingGroup.deliveryDate && (
-                                                                      <div>
-                                                                        <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Estimated Delivery</p>
-                                                                        <p className="text-xs font-medium text-brand-black">{shippingGroup.deliveryDate}</p>
-                                                                      </div>
-                                                                    )}
-                                                                    {shippingGroup.carrierTrackingUrl && (
-                                                                      <a
-                                                                        href={shippingGroup.carrierTrackingUrl}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        className="inline-flex items-center gap-1 text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline font-medium mt-1"
-                                                                      >
-                                                                        Track on {shippingGroup.carrier} website
-                                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                                                        </svg>
-                                                                      </a>
-                                                                    )}
-                                                                  </div>
-                                                                </div>
-                                                              )}
-
-                                                              {/* Shipping Information */}
-                                                              <div>
-                                                                <h5 className="text-xs font-semibold text-brand-black mb-2">Shipping Information</h5>
-                                                                <div className="bg-white rounded-lg border border-brand-gray-200 p-2 space-y-1.5">
-                                                                  {shippingGroup.shippingAddress && (
-                                                                    <div>
-                                                                      <p className="text-xs font-medium text-brand-gray-500 mb-0.5">Shipping Address</p>
-                                                                      <p className="text-xs text-brand-black">{shippingGroup.shippingAddress}</p>
-                                                                    </div>
-                                                                  )}
-                                                                  {shippingGroup.shippingMethod && (
-                                                                    <div>
-                                                                      <p className="text-xs font-medium text-brand-gray-500 mb-0.5">Shipping Method</p>
-                                                                      <p className="text-xs text-brand-black">{shippingGroup.shippingMethod}</p>
-                                                                    </div>
-                                                                  )}
-                                                                </div>
-                                                              </div>
-                                                            </>
-                                                          )}
-                                                            </div>
-                                                          )}
-                                                        </div>
-                                                      )}
-                                                      {!shippingGroup && order.trackingNumber && (
-                                                        // For simple orders without shippingGroups but with tracking info
-                                                        <div>
-                                                          <button
-                                                            onClick={() => {
-                                                              const trackingKey = `${order.orderNumber}-default`
-                                                              setExpandedTracking(prev => {
-                                                                const newSet = new Set(prev)
-                                                                if (newSet.has(trackingKey)) {
-                                                                  newSet.delete(trackingKey)
-                                                                } else {
-                                                                  newSet.add(trackingKey)
-                                                                }
-                                                                return newSet
-                                                              })
-                                                            }}
-                                                            className="flex items-center justify-between w-full text-left text-sm font-semibold text-brand-black mb-2 hover:text-brand-blue-600 transition-colors"
-                                                          >
-                                                            <span>Tracking & Shipping Information</span>
-                                                            <svg 
-                                                              className={`w-4 h-4 transition-transform ${expandedTracking.has(`${order.orderNumber}-default`) ? 'rotate-180' : ''}`}
-                                                              fill="none" 
-                                                              stroke="currentColor" 
-                                                              viewBox="0 0 24 24"
-                                                            >
-                                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                                            </svg>
-                                                          </button>
-                                                          {expandedTracking.has(`${order.orderNumber}-default`) && (
-                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-brand-gray-50 rounded-lg p-3">
-                                                            {/* Tracking Information */}
-                                                            <div>
-                                                              <h5 className="text-xs font-semibold text-brand-black mb-2">Tracking</h5>
-                                                              <div className="bg-brand-blue-50 border border-brand-blue-200 rounded-lg p-2 space-y-1.5">
-                                                                <div>
-                                                                  <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Tracking Number</p>
-                                                                  <p className="text-xs font-mono font-medium text-brand-black">{order.trackingNumber}</p>
-                                                                </div>
-                                                                {order.carrier && (
-                                                                  <div>
-                                                                    <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Carrier</p>
-                                                                    <p className="text-xs font-medium text-brand-black">{order.carrier}</p>
-                                                                  </div>
-                                                                )}
-                                                                {order.deliveryDate && (
-                                                                  <div>
-                                                                    <p className="text-xs font-medium text-brand-gray-600 mb-0.5">Estimated Delivery</p>
-                                                                    <p className="text-xs font-medium text-brand-black">{order.deliveryDate}</p>
-                                                                  </div>
-                                                                )}
-                                                                {order.carrierTrackingUrl && (
-                                                                  <a
-                                                                    href={order.carrierTrackingUrl}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="inline-flex items-center gap-1 text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline font-medium mt-1"
-                                                                  >
-                                                                    Track on {order.carrier} website
-                                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        {/* Search Input */}
+                        <div className="relative">
+                          <input
+                            type="text"
+                            placeholder="Search orders"
+                            value={orderSearchTerm}
+                            onChange={(e) => setOrderSearchTerm(e.target.value)}
+                            className="w-[212px] pl-10 pr-4 py-2 border border-brand-gray-200 rounded-lg text-sm text-brand-black placeholder-brand-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent shadow-sm"
+                          />
+                          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                                                     </svg>
-                                                                  </a>
-                                                                )}
                                                               </div>
                                                             </div>
-
-                                                            {/* Shipping Information */}
-                                                            <div>
-                                                              <h5 className="text-xs font-semibold text-brand-black mb-2">Shipping Information</h5>
-                                                              <div className="bg-white rounded-lg border border-brand-gray-200 p-2 space-y-1.5">
-                                                                {order.shippingAddress && (
-                                                                  <div>
-                                                                    <p className="text-xs font-medium text-brand-gray-500 mb-0.5">Shipping Address</p>
-                                                                    <p className="text-xs text-brand-black">{order.shippingAddress}</p>
-                                                                  </div>
-                                                                )}
-                                                                {order.shippingMethod && (
-                                                                  <div>
-                                                                    <p className="text-xs font-medium text-brand-gray-500 mb-0.5">Shipping Method</p>
-                                                                    <p className="text-xs text-brand-black">{order.shippingMethod}</p>
-                                                                  </div>
-                                                                )}
-                                                              </div>
-                                                            </div>
-                                                          </div>
-                                                          )}
-                                                        </div>
-                                                      )}
-                                                    </div>
-                                                  )
-                                                })}
-                                              </div>
-                                            )
-                                          })()}
                                         </div>
 
-                                        {/* Action Buttons - Left Aligned */}
-                                        <div>
-                                          <h4 className="text-sm font-semibold text-brand-black mb-3">Actions</h4>
-                                          <div className="flex flex-wrap gap-2 relative">
-                                            {order.status !== 'Cancelled' && (() => {
-                                              // Helper function to extract name from address
-                                              const extractNameFromAddress = (address: string): string => {
-                                                const match = address.match(/^([^,]+),/)
-                                                return match ? match[1].trim() : 'Shipment'
-                                              }
-                                              
-                                              // For multi-shipment orders, show dropdown
-                                              if (order.shippingGroups && order.shippingGroups.length > 1) {
-                                                const shipmentsWithTracking = order.shippingGroups.filter(g => g.carrierTrackingUrl)
-                                                const dropdownKey = `${order.orderNumber}-tracking-dropdown`
-                                                
-                                                return (
-                                                  <div className="relative">
-                                                    <button
-                                                      onClick={() => setShowTrackingDropdown(prev => ({ ...prev, [dropdownKey]: !prev[dropdownKey] }))}
-                                                      className="px-4 py-2.5 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm flex items-center gap-2"
-                                                    >
-                                                      Track shipment
-                                                      <svg 
-                                                        className={`w-4 h-4 transition-transform ${showTrackingDropdown[dropdownKey] ? 'rotate-180' : ''}`}
-                                                        fill="none" 
-                                                        stroke="currentColor" 
-                                                        viewBox="0 0 24 24"
-                                                      >
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                                      </svg>
-                                                    </button>
-                                                    
-                                                    {showTrackingDropdown[dropdownKey] && (
-                                                      <>
-                                                        {/* Backdrop to close dropdown */}
-                                                        <div 
-                                                          className="fixed inset-0 z-10" 
-                                                          onClick={() => setShowTrackingDropdown(prev => ({ ...prev, [dropdownKey]: false }))}
-                                                        />
-                                                        {/* Dropdown menu */}
-                                                        <div className="absolute top-full left-0 mt-2 bg-white border border-brand-gray-200 rounded-lg shadow-lg z-20 min-w-[200px]">
-                                                          {shipmentsWithTracking.map((group) => {
-                                                            const recipientName = extractNameFromAddress(group.shippingAddress || order.shippingAddress || '')
-                                                            return (
-                                                              <a
-                                                                key={group.groupId}
-                                                                href={group.carrierTrackingUrl}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="block px-4 py-3 text-sm text-brand-black hover:bg-brand-gray-50 transition-colors first:rounded-t-lg last:rounded-b-lg"
-                                                                onClick={() => setShowTrackingDropdown(prev => ({ ...prev, [dropdownKey]: false }))}
-                                                              >
-                                                                <div className="font-medium">{recipientName}</div>
-                                                                {group.trackingNumber && (
-                                                                  <div className="text-xs text-brand-gray-600 mt-1 font-mono">
-                                                                    {group.trackingNumber}
+                    {/* Orders List - Compact Summary Cards */}
+                    <div className="divide-y divide-brand-gray-200">
+                      {filteredOrders.length === 0 ? (
+                        <div className="p-12 text-center">
+                          <p className="text-brand-gray-600">No orders found matching your criteria.</p>
                                                                   </div>
-                                                                )}
-                                                              </a>
-                                                            )
-                                                          })}
-                                                        </div>
-                                                      </>
-                                                    )}
-                                                  </div>
-                                                )
-                                              } else if (order.shippingGroups && order.shippingGroups.length === 1) {
-                                                // Single shipment with shipping group - direct link
-                                                const group = order.shippingGroups[0]
-                                                return group.carrierTrackingUrl ? (
-                                                  <a
-                                                    href={group.carrierTrackingUrl}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="px-4 py-2.5 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm"
-                                                  >
-                                                    Track shipment
-                                                  </a>
-                                                ) : null
-                                              } else if (order.trackingNumber && order.carrierTrackingUrl) {
-                                                // Legacy single tracking
-                                                return (
-                                                  <a
-                                                    href={order.carrierTrackingUrl}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="px-4 py-2.5 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm"
-                                                  >
-                                                    Track order
-                                                  </a>
-                                                )
-                                              }
-                                              return null
-                                            })()}
-                                            {order.status !== 'Cancelled' && order.canReturn && (
-                                              <button className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm">
-                                                Return items
-                                              </button>
-                                            )}
-                                            {order.status !== 'Cancelled' && order.canCancel && (
-                                              <button className="px-4 py-2 bg-white border border-red-300 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors shadow-sm">
-                                                Cancel order
-                                              </button>
-                                            )}
-                                          </div>
-                                        </div>
-                                      </div>
-                                  </td>
-                                </tr>
-                              )}
-                            </React.Fragment>
-                          )
-                        })}
-                      </tbody>
-                    </table>
+                      ) : (
+                        filteredOrders.map((order, idx) => (
+                          <OrderSummaryCard key={idx} order={order} variant="full" />
+                        ))
+                      )}
                   </div>
 
                   {/* Pagination */}
                   <div className="flex items-center justify-between p-6 border-t border-brand-gray-200">
-                    <p className="text-sm text-brand-gray-600">Viewing 10 of 23 orders</p>
+                    <p className="text-sm text-brand-gray-600">
+                      Viewing {filteredOrders.length} of {recentOrders.length} orders
+                    </p>
                     <div className="flex items-center gap-2">
                       <button className="px-4 py-2 bg-white border border-brand-gray-200 text-sm font-medium text-brand-black rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm opacity-50 cursor-not-allowed">
                         Previous
@@ -3980,8 +4294,12 @@ export default function MyAccountPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Cross-Sell Component */}
+                <CrossSellSection />
               </div>
-            )}
+              )
+            })()}
 
             {/* Wishlist Section */}
             {activeSection === 'wishlist' && (
@@ -4310,100 +4628,6 @@ export default function MyAccountPage() {
                   </div>
                 </div>
 
-                {/* Gift Cards Card */}
-                <div id="gift-cards" className="scroll-mt-8 bg-white border border-brand-gray-200 rounded-xl shadow-sm">
-                  <div className="flex items-center justify-between p-6 border-b border-brand-gray-200">
-                    <div>
-                      <h3 className="text-base font-semibold text-brand-black mb-1.5">Gift Cards</h3>
-                      <p className="text-sm text-brand-gray-600">Manage your gift cards and balances</p>
-                    </div>
-                    <button
-                      onClick={() => {
-                        // In a real app, this would open a modal to add a gift card
-                        alert('Add Gift Card modal would open here')
-                      }}
-                      className="px-4 py-2 text-sm font-medium bg-white border border-brand-gray-300 text-brand-black hover:bg-brand-gray-50 rounded-lg transition-colors shadow-sm"
-                    >
-                      Add gift card
-                    </button>
-                  </div>
-                  <div className="p-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                      {/* Gift Card 1 */}
-                      <div className="border border-brand-gray-200 rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <span className="text-sm font-medium text-brand-black">Gift Card</span>
-                          <svg className="w-5 h-5 text-brand-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                          </svg>
-                        </div>
-                        <p className="text-2xl font-semibold text-brand-black mb-1">$75.00</p>
-                        <p className="text-xs text-brand-gray-500 mb-3">Card ending in 1234</p>
-                        <div className="flex items-center gap-2">
-                          <button className="text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline">
-                            View Details
-                          </button>
-                          <span className="text-xs text-brand-gray-300">•</span>
-                          <button className="text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline">
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                      
-                      {/* Gift Card 2 */}
-                      <div className="border border-brand-gray-200 rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <span className="text-sm font-medium text-brand-black">Gift Card</span>
-                          <svg className="w-5 h-5 text-brand-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                          </svg>
-                        </div>
-                        <p className="text-2xl font-semibold text-brand-black mb-1">$50.00</p>
-                        <p className="text-xs text-brand-gray-500 mb-3">Card ending in 5678</p>
-                        <div className="flex items-center gap-2">
-                          <button className="text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline">
-                            View Details
-                          </button>
-                          <span className="text-xs text-brand-gray-300">•</span>
-                          <button className="text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline">
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="pt-4 border-t border-brand-gray-200">
-                      <p className="text-sm font-medium text-brand-black">Total Balance: <span className="text-brand-blue-500">$125.00</span></p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Store Credit Card */}
-                <div id="store-credit" className="scroll-mt-8 bg-white border border-brand-gray-200 rounded-xl shadow-sm">
-                  <div className="flex items-center justify-between p-6 border-b border-brand-gray-200">
-                    <div>
-                      <h3 className="text-base font-semibold text-brand-black mb-1.5">Store Credit</h3>
-                      <p className="text-sm text-brand-gray-600">Your available store credit balance</p>
-                    </div>
-                  </div>
-                  <div className="p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <p className="text-3xl font-semibold text-brand-black mb-1">$50.00</p>
-                        <p className="text-sm text-brand-gray-600">Available credit</p>
-                      </div>
-                      <svg className="w-12 h-12 text-brand-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div className="pt-4 border-t border-brand-gray-200">
-                      <p className="text-sm text-brand-gray-600 mb-2">Store credit can be used for any purchase</p>
-                      <button className="text-sm text-brand-blue-500 hover:text-brand-blue-600 hover:underline">
-                        View credit history →
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
                 {/* Payment Methods Card */}
                 <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm">
                   <div className="flex items-center justify-between p-6 border-b border-brand-gray-200">
@@ -4430,13 +4654,16 @@ export default function MyAccountPage() {
                   </div>
                   <div className="p-6">
                     <div className="space-y-4">
-                      {paymentMethods.map((method) => {
-                    const isSelected = selectedPaymentMethodId === method.id
+                      {paymentMethods.sort((a, b) => {
+                        if (a.isDefault) return -1
+                        if (b.isDefault) return 1
+                        return 0
+                      }).map((method) => {
                     return (
                       <div
                         key={method.id}
                         className={`bg-white border rounded-xl shadow-sm p-6 relative ${
-                          isSelected ? 'border-brand-blue-500' : 'border-brand-gray-200'
+                          method.isDefault ? 'border-brand-blue-500' : 'border-brand-gray-200'
                         }`}
                       >
                         {/* Card Brand Icon */}
@@ -4458,25 +4685,7 @@ export default function MyAccountPage() {
                           )}
                         </div>
 
-                        {/* Radio Button and Card Info */}
-                        <div className="flex items-start gap-4">
-                          <button
-                            onClick={() => setSelectedPaymentMethodId(method.id)}
-                            className="mt-1 flex-shrink-0"
-                          >
-                            <div
-                              className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
-                                isSelected
-                                  ? 'border-brand-blue-500'
-                                  : 'border-brand-gray-300'
-                              }`}
-                            >
-                              {isSelected && (
-                                <div className="w-2.5 h-2.5 rounded-full bg-brand-blue-500" />
-                              )}
-                            </div>
-                          </button>
-
+                        {/* Card Info */}
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
                             <span className="text-base font-medium text-brand-black">
@@ -4504,7 +4713,10 @@ export default function MyAccountPage() {
                           {/* Action Links */}
                           <div className="flex items-center gap-4">
                             {!method.isDefault && (
-                              <button className="text-sm text-brand-blue-500 hover:text-brand-blue-600 hover:underline">
+                              <button 
+                                onClick={() => handleSetDefaultPaymentMethod(method.id)}
+                                className="text-sm text-brand-blue-500 hover:text-brand-blue-600 hover:underline"
+                              >
                                 Set Default
                               </button>
                             )}
@@ -4515,20 +4727,107 @@ export default function MyAccountPage() {
                             )}
                             <button 
                               onClick={() => {
-                                if (confirm(`Are you sure you want to remove this payment method?`)) {
-                                  setPaymentMethods(paymentMethods.filter(p => p.id !== method.id))
-                                }
+                                setPaymentMethodToRemove(method.id)
+                                setShowRemovePaymentMethodModal(true)
                               }}
                               className="text-sm text-brand-blue-500 hover:text-brand-blue-600 hover:underline"
                             >
                               Remove
                             </button>
-                          </div>
                         </div>
                       </div>
                     </div>
                     )
                   })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Gift Cards Card */}
+                <div id="gift-cards" className="scroll-mt-8 bg-white border border-brand-gray-200 rounded-xl shadow-sm">
+                  <div className="flex items-center justify-between p-6 border-b border-brand-gray-200">
+                    <div>
+                      <h3 className="text-base font-semibold text-brand-black mb-1.5">Gift Cards</h3>
+                      <p className="text-sm text-brand-gray-600">Manage your gift cards and balances</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setGiftCardForm({ cardNumber: '', pin: '' })
+                        setShowAddGiftCardModal(true)
+                      }}
+                      className="px-4 py-2 text-sm font-medium bg-white border border-brand-gray-300 text-brand-black hover:bg-brand-gray-50 rounded-lg transition-colors shadow-sm"
+                    >
+                      Add gift card
+                    </button>
+                  </div>
+                  <div className="p-6">
+                    {giftCards.length > 0 ? (
+                      <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                          {giftCards.map((card) => (
+                            <div key={card.id} className="border border-brand-gray-200 rounded-lg p-4">
+                              <div className="flex items-center justify-between mb-3">
+                                <span className="text-sm font-medium text-brand-black">Gift Card</span>
+                                <svg className="w-5 h-5 text-brand-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                                </svg>
+                              </div>
+                              <p className="text-2xl font-semibold text-brand-black mb-1">${card.balance.toFixed(2)}</p>
+                              <p className="text-xs text-brand-gray-500 mb-3">Card ending in {card.last4}</p>
+                              <button 
+                                onClick={() => {
+                                  setGiftCardToRemove(card.id)
+                                  setShowRemoveGiftCardModal(true)
+                                }}
+                                className="text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="pt-4 border-t border-brand-gray-200">
+                          <p className="text-sm font-medium text-brand-black">Total Balance: <span className="text-brand-blue-500">${giftCards.reduce((sum, card) => sum + card.balance, 0).toFixed(2)}</span></p>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-center py-8">
+                        <svg className="w-12 h-12 text-brand-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                        </svg>
+                        <p className="text-sm text-brand-gray-600 mb-2">No gift cards added yet</p>
+                        <p className="text-xs text-brand-gray-500">Add a gift card to start using it for purchases</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Store Credit Card */}
+                <div id="store-credit" className="scroll-mt-8 bg-white border border-brand-gray-200 rounded-xl shadow-sm">
+                  <div className="flex items-center justify-between p-6 border-b border-brand-gray-200">
+                    <div>
+                      <h3 className="text-base font-semibold text-brand-black mb-1.5">Store Credit</h3>
+                      <p className="text-sm text-brand-gray-600">Your available store credit balance</p>
+                    </div>
+                  </div>
+                  <div className="p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <p className="text-3xl font-semibold text-brand-black mb-1">$50.00</p>
+                        <p className="text-sm text-brand-gray-600">Available credit</p>
+                      </div>
+                      <svg className="w-12 h-12 text-brand-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div className="pt-4 border-t border-brand-gray-200">
+                      <p className="text-sm text-brand-gray-600 mb-2">Store credit can be used for any purchase</p>
+                      <button 
+                        onClick={() => setShowCreditHistory(true)}
+                        className="text-sm text-brand-blue-500 hover:text-brand-blue-600 hover:underline"
+                      >
+                        View credit history →
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -4557,54 +4856,17 @@ export default function MyAccountPage() {
                   </div>
                 </div>
 
-                {/* Local Store Preference */}
-                <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="text-base font-semibold text-brand-black mb-1.5">Preferred Store for Pickup</h3>
-                      <p className="text-sm text-brand-gray-600">Select your preferred store for in-store pickup orders</p>
-                    </div>
-                    <button className="px-4 py-2 text-sm font-medium bg-white border border-brand-gray-300 text-brand-black hover:bg-brand-gray-50 rounded-lg transition-colors shadow-sm">
-                      Change store
-                    </button>
-                  </div>
-                  <div className="p-4 bg-brand-gray-50 rounded-lg border border-brand-gray-200">
-                    <p className="text-sm font-medium text-brand-black mb-1">Market Street - San Francisco</p>
-                    <p className="text-sm text-brand-gray-600">415 Mission Street, San Francisco, CA 94105</p>
-                    <p className="text-xs text-brand-gray-500 mt-1">Open today: 10:00 AM - 8:00 PM</p>
-                  </div>
-                </div>
-
                 {/* Addresses List */}
                 <div className="space-y-4">
                   {addresses.map((address) => {
-                    const isSelected = selectedAddressId === address.id
                     return (
                       <div
                         key={address.id}
                         className={`bg-white border rounded-xl shadow-sm p-6 ${
-                          isSelected ? 'border-brand-blue-500' : 'border-brand-gray-200'
+                          address.isDefault ? 'border-brand-blue-500' : 'border-brand-gray-200'
                         }`}
                       >
-                        <div className="flex items-start gap-4">
-                          {/* Radio Button */}
-                          <button
-                            onClick={() => setSelectedAddressId(address.id)}
-                            className="mt-1 flex-shrink-0"
-                          >
-                            <div
-                              className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
-                                isSelected
-                                  ? 'border-brand-blue-500'
-                                  : 'border-brand-gray-300'
-                              }`}
-                            >
-                              {isSelected && (
-                                <div className="w-2.5 h-2.5 rounded-full bg-brand-blue-500" />
-                              )}
-                            </div>
-                          </button>
-
+                        <div className="flex items-start">
                           {/* Address Info */}
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-2">
@@ -4627,21 +4889,6 @@ export default function MyAccountPage() {
                                 <p className="text-xs text-brand-blue-700">{address.deliveryInstructions}</p>
                               </div>
                             )}
-                            {!address.deliveryInstructions && <div className="mb-4"></div>}
-
-                            {/* Authorized Pickup People */}
-                            <div className="mb-4 p-3 bg-brand-gray-50 border border-brand-gray-200 rounded-lg">
-                              <div className="flex items-center justify-between mb-2">
-                                <p className="text-xs font-medium text-brand-gray-700">Authorized Pickup People</p>
-                                <button className="text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline">
-                                  Manage
-                                </button>
-                              </div>
-                              <div className="space-y-1">
-                                <p className="text-xs text-brand-gray-600">• {address.firstName} {address.lastName} (You)</p>
-                                <p className="text-xs text-brand-gray-500">No additional authorized people</p>
-                              </div>
-                            </div>
 
                             {/* Action Links */}
                             <div className="flex items-center gap-4">
@@ -4665,7 +4912,10 @@ export default function MyAccountPage() {
                                 </button>
                               )}
                               <button 
-                                onClick={() => handleRemoveAddress(address.id)}
+                                onClick={() => {
+                                  setAddressToRemove(address.id)
+                                  setShowRemoveAddressModal(true)
+                                }}
                                 className="text-sm text-brand-blue-500 hover:text-brand-blue-600 hover:underline"
                               >
                                 Remove
@@ -4676,131 +4926,6 @@ export default function MyAccountPage() {
                       </div>
                     )
                   })}
-                </div>
-              </div>
-            )}
-
-            {/* Passkeys Section */}
-            {activeSection === 'passkeys' && (
-              <div className="space-y-5">
-                {/* Passkeys Header */}
-                <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h2 className="text-2xl font-semibold text-brand-black mb-1.5">Passkeys</h2>
-                      <p className="text-sm text-brand-gray-600">Sign in securely without passwords using your device</p>
-                    </div>
-                    <button 
-                      onClick={() => {
-                        // In a real app, this would trigger WebAuthn API
-                        if (typeof window !== 'undefined' && 'PublicKeyCredential' in window) {
-                          alert('Passkey setup would be initiated here using WebAuthn API')
-                        } else {
-                          alert('Passkeys are not supported in this browser')
-                        }
-                      }}
-                      className="px-4 py-2 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors whitespace-nowrap shadow-sm"
-                    >
-                      Add passkey
-                    </button>
-                  </div>
-                </div>
-
-                {/* Passkeys Content */}
-                <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm">
-                  <div className="p-6">
-                    {passkeys.length === 0 ? (
-                      <div className="text-center py-12">
-                        <svg className="w-16 h-16 text-brand-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                        </svg>
-                        <p className="text-base font-medium text-brand-black mb-2">No passkeys set up</p>
-                        <p className="text-sm text-brand-gray-600 mb-6">Add a passkey to sign in faster and more securely</p>
-                        <button 
-                          onClick={() => {
-                            if (typeof window !== 'undefined' && 'PublicKeyCredential' in window) {
-                              alert('Passkey setup would be initiated here using WebAuthn API')
-                            } else {
-                              alert('Passkeys are not supported in this browser')
-                            }
-                          }}
-                          className="px-6 py-2.5 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm"
-                        >
-                          Get Started
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {passkeys.map((passkey) => (
-                          <div key={passkey.id} className="flex items-center justify-between p-4 border border-brand-gray-200 rounded-lg">
-                            <div className="flex items-center gap-4">
-                              <div className="w-12 h-12 bg-brand-blue-100 rounded-lg flex items-center justify-center">
-                                {passkey.deviceType === 'device' ? (
-                                  <svg className="w-7 h-7 text-brand-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                                  </svg>
-                                ) : (
-                                  <svg className="w-7 h-7 text-brand-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                  </svg>
-                                )}
-                              </div>
-                              <div>
-                                <p className="text-base font-medium text-brand-black">{passkey.name}</p>
-                                <div className="flex items-center gap-3 mt-1">
-                                  <p className="text-sm text-brand-gray-600">Created {new Date(passkey.createdAt).toLocaleDateString()}</p>
-                                  {passkey.lastUsed && (
-                                    <>
-                                      <span className="text-sm text-brand-gray-400">•</span>
-                                      <p className="text-sm text-brand-gray-600">Last used {new Date(passkey.lastUsed).toLocaleDateString()}</p>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => {
-                                if (confirm(`Are you sure you want to remove the passkey "${passkey.name}"?`)) {
-                                  setPasskeys(passkeys.filter(p => p.id !== passkey.id))
-                                }
-                              }}
-                              className="text-sm text-red-600 hover:text-red-700 hover:underline font-medium"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    
-                    {/* About Passkeys Info */}
-                    <div className="mt-6 p-4 bg-brand-blue-50 border border-brand-blue-200 rounded-lg">
-                      <p className="text-sm font-medium text-brand-blue-800 mb-2">About Passkeys</p>
-                      <p className="text-sm text-brand-blue-700 mb-3">
-                        Passkeys use biometric authentication (Face ID, Touch ID, or Windows Hello) or your device PIN to sign in securely without passwords.
-                      </p>
-                      <div className="space-y-2 text-sm text-brand-blue-700">
-                        <div className="flex items-start gap-2">
-                          <svg className="w-5 h-5 text-brand-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          <p>More secure than passwords</p>
-                        </div>
-                        <div className="flex items-start gap-2">
-                          <svg className="w-5 h-5 text-brand-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          <p>Faster sign-in experience</p>
-                        </div>
-                        <div className="flex items-start gap-2">
-                          <svg className="w-5 h-5 text-brand-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          <p>Works across all your devices</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               </div>
             )}
@@ -5093,7 +5218,7 @@ export default function MyAccountPage() {
                 {/* Achievements */}
                 <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
                   <h3 className="text-lg font-semibold text-brand-black mb-4">Recent Achievements</h3>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="text-center p-3 bg-brand-gray-50 rounded-lg">
                       <div className="w-10 h-10 bg-brand-blue-500 rounded-full flex items-center justify-center mx-auto mb-2">
                         <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -5126,8 +5251,233 @@ export default function MyAccountPage() {
               </div>
             )}
 
+            {/* Store Preferences Section */}
+            {activeSection === 'store-preferences' && (
+              <div className="space-y-5">
+                {/* Store Preferences Header */}
+                <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
+                  <div>
+                    <h2 className="text-2xl font-semibold text-brand-black mb-1.5">Store Preferences</h2>
+                    <p className="text-sm text-brand-gray-600">Manage your preferred store locations and pickup preferences</p>
+                  </div>
+                </div>
+
+                {/* Preferred Store for Pickup */}
+                <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-base font-semibold text-brand-black mb-1.5">Preferred Store for Pickup</h3>
+                      <p className="text-sm text-brand-gray-600">Select your preferred store for in-store pickup orders</p>
+                    </div>
+                    <button 
+                      onClick={() => setShowStoreSelector(true)}
+                      className="px-4 py-2 text-sm font-medium bg-white border border-brand-gray-300 text-brand-black hover:bg-brand-gray-50 rounded-lg transition-colors shadow-sm"
+                    >
+                      Change store
+                    </button>
+                  </div>
+                  <div className="p-4 bg-brand-gray-50 rounded-lg border border-brand-gray-200">
+                    <p className="text-sm font-medium text-brand-black mb-1">{preferredStoreForPickup.name}</p>
+                    <p className="text-sm text-brand-gray-600">{preferredStoreForPickup.address}</p>
+                    <p className="text-xs text-brand-gray-500 mt-1">{preferredStoreForPickup.hours}</p>
+                  </div>
+                </div>
+
+                {/* Authorized Pickup People */}
+                <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-base font-semibold text-brand-black mb-1.5">Authorized Pickup People</h3>
+                      <p className="text-sm text-brand-gray-600">Add people who are authorized to pick up orders on your behalf</p>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        setAuthorizedPersonForm({
+                          firstName: '',
+                          lastName: '',
+                          email: '',
+                          relationship: '',
+                        })
+                        setShowAddPersonModal(true)
+                      }}
+                      className="px-4 py-2 text-sm font-medium bg-brand-blue-500 text-white rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm flex items-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      Add Person
+                    </button>
+                  </div>
+                  
+                  {/* Authorized People List */}
+                  <div className="space-y-3">
+                    <div className="p-4 border border-brand-gray-200 rounded-lg">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="text-sm font-medium text-brand-black">Sarah Johnson</p>
+                            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded">Active</span>
+                          </div>
+                          <p className="text-sm text-brand-gray-600 mb-1">sarah.johnson@email.com</p>
+                          <p className="text-xs text-brand-gray-500">Relationship: Spouse</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button className="p-2 text-brand-gray-500 hover:text-brand-blue-600 hover:bg-brand-blue-50 rounded-lg transition-colors">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          <button className="p-2 text-brand-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="p-4 border border-brand-gray-200 rounded-lg">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="text-sm font-medium text-brand-black">Michael Chen</p>
+                            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded">Active</span>
+                          </div>
+                          <p className="text-sm text-brand-gray-600 mb-1">michael.chen@email.com</p>
+                          <p className="text-xs text-brand-gray-500">Relationship: Family Member</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button className="p-2 text-brand-gray-500 hover:text-brand-blue-600 hover:bg-brand-blue-50 rounded-lg transition-colors">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          <button className="p-2 text-brand-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Info Message */}
+                  <div className="mt-4 p-3 bg-brand-blue-50 border border-brand-blue-200 rounded-lg">
+                    <div className="flex items-start gap-2">
+                      <svg className="w-4 h-4 text-brand-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className="text-xs text-brand-blue-800">
+                        Authorized pickup people will need to show a valid ID matching the name on file when picking up orders.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Pickup Preferences */}
+                <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm">
+                  <div className="flex items-center justify-between p-6 border-b border-brand-gray-200">
+                    <div>
+                      <h3 className="text-base font-semibold text-brand-black mb-1.5">Pickup Preferences</h3>
+                      <p className="text-sm text-brand-gray-600">Manage your pickup notification and store preferences</p>
+                    </div>
+                    {!isEditingPickupPreferences ? (
+                      <button 
+                        onClick={() => setIsEditingPickupPreferences(true)}
+                        className="px-4 py-2 text-sm font-medium bg-white border border-brand-gray-300 text-brand-black rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
+                      >
+                        Edit
+                      </button>
+                    ) : (
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => {
+                            setIsEditingPickupPreferences(false)
+                            showToastMessage('Pickup preferences saved successfully')
+                          }}
+                          className="px-4 py-2 text-sm font-medium bg-brand-blue-500 text-white hover:bg-brand-blue-600 rounded-lg transition-colors shadow-sm"
+                        >
+                          Save
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setIsEditingPickupPreferences(false)
+                            setPickupPreferencesForm({
+                              autoSelectStore: true,
+                              pickupNotifications: true,
+                              storeEventsPromotions: false,
+                            })
+                          }}
+                          className="px-4 py-2 text-sm font-medium bg-white border border-brand-gray-300 text-brand-black hover:bg-brand-gray-50 rounded-lg transition-colors shadow-sm"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-brand-black mb-1">Auto-select preferred store</p>
+                        <p className="text-xs text-brand-gray-600">Automatically use your preferred store for pickup orders</p>
+                      </div>
+                      {isEditingPickupPreferences ? (
+                        <button 
+                          onClick={() => setPickupPreferencesForm({ ...pickupPreferencesForm, autoSelectStore: !pickupPreferencesForm.autoSelectStore })}
+                          className={`relative w-9 h-5 rounded-full p-0.5 flex items-center shadow-sm transition-colors cursor-pointer ${pickupPreferencesForm.autoSelectStore ? 'bg-brand-blue-500 justify-end' : 'bg-brand-gray-200'}`}
+                        >
+                          <div className="w-4 h-4 bg-white rounded-full"></div>
+                        </button>
+                      ) : (
+                        <button className={`relative w-9 h-5 rounded-full p-0.5 flex items-center shadow-sm opacity-50 cursor-not-allowed transition-all ${pickupPreferencesForm.autoSelectStore ? 'bg-brand-blue-300 justify-end' : 'bg-brand-gray-200'}`} title="Click Edit to make changes">
+                          <div className="w-4 h-4 bg-white rounded-full"></div>
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-brand-black mb-1">Pickup notifications</p>
+                        <p className="text-xs text-brand-gray-600">Get notified when your order is ready for pickup</p>
+                      </div>
+                      {isEditingPickupPreferences ? (
+                        <button 
+                          onClick={() => setPickupPreferencesForm({ ...pickupPreferencesForm, pickupNotifications: !pickupPreferencesForm.pickupNotifications })}
+                          className={`relative w-9 h-5 rounded-full p-0.5 flex items-center shadow-sm transition-colors cursor-pointer ${pickupPreferencesForm.pickupNotifications ? 'bg-brand-blue-500 justify-end' : 'bg-brand-gray-200'}`}
+                        >
+                          <div className="w-4 h-4 bg-white rounded-full"></div>
+                        </button>
+                      ) : (
+                        <button className={`relative w-9 h-5 rounded-full p-0.5 flex items-center shadow-sm opacity-50 cursor-not-allowed transition-all ${pickupPreferencesForm.pickupNotifications ? 'bg-brand-blue-300 justify-end' : 'bg-brand-gray-200'}`} title="Click Edit to make changes">
+                          <div className="w-4 h-4 bg-white rounded-full"></div>
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-brand-black mb-1">Store events & promotions</p>
+                        <p className="text-xs text-brand-gray-600">Receive updates about events and promotions at your preferred store</p>
+                      </div>
+                      {isEditingPickupPreferences ? (
+                        <button 
+                          onClick={() => setPickupPreferencesForm({ ...pickupPreferencesForm, storeEventsPromotions: !pickupPreferencesForm.storeEventsPromotions })}
+                          className={`relative w-9 h-5 rounded-full p-0.5 flex items-center shadow-sm transition-colors cursor-pointer ${pickupPreferencesForm.storeEventsPromotions ? 'bg-brand-blue-500 justify-end' : 'bg-brand-gray-200'}`}
+                        >
+                          <div className="w-4 h-4 bg-white rounded-full"></div>
+                        </button>
+                      ) : (
+                        <button className={`relative w-9 h-5 rounded-full p-0.5 flex items-center shadow-sm opacity-50 cursor-not-allowed transition-all ${pickupPreferencesForm.storeEventsPromotions ? 'bg-brand-blue-300 justify-end' : 'bg-brand-gray-200'}`} title="Click Edit to make changes">
+                          <div className="w-4 h-4 bg-white rounded-full"></div>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Other sections placeholder */}
-            {activeSection !== 'overview' && activeSection !== 'account-details' && activeSection !== 'order-history' && activeSection !== 'wishlist' && activeSection !== 'payment' && activeSection !== 'addresses' && activeSection !== 'passkeys' && activeSection !== 'loyalty' && (
+            {activeSection !== 'overview' && activeSection !== 'account-details' && activeSection !== 'order-history' && activeSection !== 'wishlist' && activeSection !== 'payment' && activeSection !== 'addresses' && activeSection !== 'passkeys' && activeSection !== 'loyalty' && activeSection !== 'store-preferences' && (
               <div className="py-12 text-center">
                 <p className="text-brand-gray-600">This section is coming soon</p>
               </div>
@@ -5482,7 +5832,9 @@ export default function MyAccountPage() {
                 <button
                   onClick={() => {
                     // In a real app, this would open support contact or redirect
+                    if (typeof window !== 'undefined') {
                     window.location.href = 'mailto:support@marketstreet.com?subject=Account Deletion Request'
+                    }
                   }}
                   className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors"
                 >
@@ -5928,27 +6280,69 @@ export default function MyAccountPage() {
       )}
 
       {/* Select Interests Modal */}
-      {showInterestsModal && interestsModalCategory && (
+      {showInterestsModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => {
             setShowInterestsModal(false)
-            setInterestsModalCategory(null)
           }} />
           <div className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="flex items-center justify-between p-6 border-b border-brand-gray-200">
-                <h2 className="text-xl font-semibold text-brand-black">Select Your Interests</h2>
+                <h2 className="text-xl font-semibold text-brand-black">Add Your Interests</h2>
                 <button
                   onClick={() => {
                     setShowInterestsModal(false)
-                    setInterestsModalCategory(null)
                   }}
                   className="text-brand-gray-400 hover:text-brand-black transition-colors"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
+                </button>
+              </div>
+
+              {/* Category Tabs */}
+              <div className="flex items-center gap-1 px-6 pt-4 border-b border-brand-gray-200">
+                <button
+                  onClick={() => setInterestsModalCategory('designStyles')}
+                  className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+                    interestsModalCategory === 'designStyles'
+                      ? 'bg-white border-t border-l border-r border-brand-gray-200 text-brand-black'
+                      : 'text-brand-gray-600 hover:text-brand-black'
+                  }`}
+                >
+                  Design Styles
+                </button>
+                <button
+                  onClick={() => setInterestsModalCategory('roomTypes')}
+                  className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+                    interestsModalCategory === 'roomTypes'
+                      ? 'bg-white border-t border-l border-r border-brand-gray-200 text-brand-black'
+                      : 'text-brand-gray-600 hover:text-brand-black'
+                  }`}
+                >
+                  Room Types
+                </button>
+                <button
+                  onClick={() => setInterestsModalCategory('materials')}
+                  className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+                    interestsModalCategory === 'materials'
+                      ? 'bg-white border-t border-l border-r border-brand-gray-200 text-brand-black'
+                      : 'text-brand-gray-600 hover:text-brand-black'
+                  }`}
+                >
+                  Materials
+                </button>
+                <button
+                  onClick={() => setInterestsModalCategory('aesthetics')}
+                  className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+                    interestsModalCategory === 'aesthetics'
+                      ? 'bg-white border-t border-l border-r border-brand-gray-200 text-brand-black'
+                      : 'text-brand-gray-600 hover:text-brand-black'
+                  }`}
+                >
+                  Aesthetics
                 </button>
               </div>
 
@@ -6030,7 +6424,6 @@ export default function MyAccountPage() {
                 <button
                   onClick={() => {
                     setShowInterestsModal(false)
-                    setInterestsModalCategory(null)
                   }}
                   className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
                 >
@@ -6039,7 +6432,6 @@ export default function MyAccountPage() {
                 <button
                   onClick={() => {
                     setShowInterestsModal(false)
-                    setInterestsModalCategory(null)
                   }}
                   className="px-4 py-2 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm"
                 >
@@ -6143,7 +6535,7 @@ export default function MyAccountPage() {
       {quickViewProduct && (
         <QuickViewModal
           product={quickViewProduct}
-          allProducts={getAllProducts()}
+          allProducts={allProducts}
           isOpen={!!quickViewProduct}
           onClose={() => setQuickViewProduct(null)}
           onAddToCart={(product, size, color) => {
@@ -6163,6 +6555,1090 @@ export default function MyAccountPage() {
           onClose={() => setNotifyMeProduct(null)}
           onNotify={handleNotifyMe}
         />
+      )}
+
+      {/* Store Locator Modal */}
+      <StoreLocatorModal
+        isOpen={showStoreSelector}
+        onClose={() => setShowStoreSelector(false)}
+        onSelectStore={(store) => {
+          setPreferredStoreForPickup({
+            id: store.id,
+            name: store.name,
+            address: store.address,
+            hours: store.hours,
+          })
+          setShowStoreSelector(false)
+          showToastMessage(`Preferred store updated to ${store.name}`, 'success')
+        }}
+        selectedStoreId={preferredStoreForPickup.id}
+      />
+
+      {/* Add Authorized Person Modal */}
+      {showAddPersonModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowAddPersonModal(false)} />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full p-6" onClick={(e) => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-semibold text-brand-black">
+                  Add Authorized Person
+                </h2>
+                <button
+                  onClick={() => setShowAddPersonModal(false)}
+                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+    </div>
+
+              {/* Modal Content */}
+              <div className="space-y-4">
+                {/* First Name & Last Name */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-brand-black mb-2">First Name</label>
+                    <input
+                      type="text"
+                      value={authorizedPersonForm.firstName}
+                      onChange={(e) => setAuthorizedPersonForm({ ...authorizedPersonForm, firstName: e.target.value })}
+                      className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent"
+                      placeholder="First Name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-brand-black mb-2">Last Name</label>
+                    <input
+                      type="text"
+                      value={authorizedPersonForm.lastName}
+                      onChange={(e) => setAuthorizedPersonForm({ ...authorizedPersonForm, lastName: e.target.value })}
+                      className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent"
+                      placeholder="Last Name"
+                    />
+                  </div>
+                </div>
+
+                {/* Email */}
+                <div>
+                  <label className="block text-sm font-medium text-brand-black mb-2">Email Address</label>
+                  <input
+                    type="email"
+                    value={authorizedPersonForm.email}
+                    onChange={(e) => setAuthorizedPersonForm({ ...authorizedPersonForm, email: e.target.value })}
+                    className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent"
+                    placeholder="email@example.com"
+                  />
+                </div>
+
+                {/* Relationship */}
+                <div>
+                  <label className="block text-sm font-medium text-brand-black mb-2">Relationship</label>
+                  <div className="relative">
+                    <select
+                      value={authorizedPersonForm.relationship}
+                      onChange={(e) => setAuthorizedPersonForm({ ...authorizedPersonForm, relationship: e.target.value })}
+                      className="w-full px-3 py-2 pr-10 border border-brand-gray-300 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent appearance-none bg-white"
+                    >
+                      <option value="">Select Relationship</option>
+                      <option value="spouse">Spouse</option>
+                      <option value="family-member">Family Member</option>
+                      <option value="friend">Friend</option>
+                      <option value="colleague">Colleague</option>
+                      <option value="other">Other</option>
+                    </select>
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                      <svg className="w-5 h-5 text-brand-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Info Message */}
+                <div className="p-3 bg-brand-blue-50 border border-brand-blue-200 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <svg className="w-4 h-4 text-brand-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-xs text-brand-blue-800">
+                      This person will be authorized to pick up orders on your behalf. They will need to show a valid ID matching the name provided when picking up orders.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-end gap-3 mt-6 pt-6 border-t border-brand-gray-200">
+                <button
+                  onClick={() => setShowAddPersonModal(false)}
+                  className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (!authorizedPersonForm.firstName || !authorizedPersonForm.lastName || !authorizedPersonForm.email || !authorizedPersonForm.relationship) {
+                      showToastMessage('Please fill in all required fields', 'error')
+                      return
+                    }
+                    // TODO: Add person to authorized list
+                    showToastMessage(`${authorizedPersonForm.firstName} ${authorizedPersonForm.lastName} added as authorized pickup person`)
+                    setShowAddPersonModal(false)
+                    setAuthorizedPersonForm({
+                      firstName: '',
+                      lastName: '',
+                      email: '',
+                      relationship: '',
+                    })
+                  }}
+                  className="px-4 py-2 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Gift Card Modal */}
+      {showAddGiftCardModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowAddGiftCardModal(false)} />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-semibold text-brand-black">Add Gift Card</h2>
+                <button
+                  onClick={() => setShowAddGiftCardModal(false)}
+                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-brand-black mb-2">Gift Card Number</label>
+                  <input
+                    type="text"
+                    value={giftCardForm.cardNumber}
+                    onChange={(e) => setGiftCardForm({ ...giftCardForm, cardNumber: e.target.value.replace(/\s/g, '').replace(/(.{4})/g, '$1 ').trim() })}
+                    className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent"
+                    placeholder="1234 5678 9012 3456"
+                    maxLength={19}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-brand-black mb-2">PIN or Security Code</label>
+                  <input
+                    type="text"
+                    value={giftCardForm.pin}
+                    onChange={(e) => setGiftCardForm({ ...giftCardForm, pin: e.target.value.replace(/\D/g, '').slice(0, 4) })}
+                    className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent"
+                    placeholder="1234"
+                    maxLength={4}
+                  />
+                </div>
+                <div className="p-3 bg-brand-blue-50 border border-brand-blue-200 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <svg className="w-4 h-4 text-brand-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-xs text-brand-blue-800">
+                      The PIN is typically found on the back of your gift card or in the email confirmation.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-end gap-3 mt-6 pt-6 border-t border-brand-gray-200">
+                <button
+                  onClick={() => setShowAddGiftCardModal(false)}
+                  className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (!giftCardForm.cardNumber || !giftCardForm.pin) {
+                      showToastMessage('Please enter both card number and PIN', 'error')
+                      return
+                    }
+                    // Extract last 4 digits
+                    const cardNumber = giftCardForm.cardNumber.replace(/\s/g, '')
+                    const last4 = cardNumber.slice(-4)
+                    // Add new gift card
+                    const newCard = {
+                      id: `gc-${Date.now()}`,
+                      balance: 0, // Would be fetched from API
+                      last4: last4,
+                    }
+                    setGiftCards([...giftCards, newCard])
+                    setShowAddGiftCardModal(false)
+                    setGiftCardForm({ cardNumber: '', pin: '' })
+                    showToastMessage('Gift card added successfully')
+                  }}
+                  className="px-4 py-2 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm"
+                >
+                  Add Card
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Gift Card Confirmation Modal */}
+      {showRemoveGiftCardModal && giftCardToRemove && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => {
+            setShowRemoveGiftCardModal(false)
+            setGiftCardToRemove(null)
+          }} />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-brand-black">Remove Gift Card</h2>
+                <button
+                  onClick={() => {
+                    setShowRemoveGiftCardModal(false)
+                    setGiftCardToRemove(null)
+                  }}
+                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="mb-6">
+                {(() => {
+                  const card = giftCards.find(c => c.id === giftCardToRemove)
+                  if (!card) {
+                    return <p className="text-sm text-brand-gray-600">Gift card not found.</p>
+                  }
+                  const cardBalance = card.balance
+                  const cardLast4 = card.last4
+                  return (
+                    <>
+                      <p className="text-sm text-brand-gray-600 mb-4">
+                        Are you sure you want to remove this gift card?
+                      </p>
+                      <div className="p-4 bg-brand-gray-50 border border-brand-gray-200 rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-brand-black">Gift Card</span>
+                          <svg className="w-5 h-5 text-brand-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                          </svg>
+                        </div>
+                        <p className="text-xl font-semibold text-brand-black mb-1">${cardBalance.toFixed(2)}</p>
+                        <p className="text-xs text-brand-gray-500">Card ending in {cardLast4}</p>
+                      </div>
+                      {cardBalance > 0 && (
+                        <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                          <div className="flex items-start gap-2">
+                            <svg className="w-4 h-4 text-orange-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <p className="text-xs text-orange-800">
+                              This card has a remaining balance of ${cardBalance.toFixed(2)}. You will not be able to use this balance after removing the card.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowRemoveGiftCardModal(false)
+                    setGiftCardToRemove(null)
+                  }}
+                  className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (giftCardToRemove) {
+                      setGiftCards(giftCards.filter(c => c.id !== giftCardToRemove))
+                      setShowRemoveGiftCardModal(false)
+                      setGiftCardToRemove(null)
+                      showToastMessage('Gift card removed successfully')
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-500 text-white text-sm font-medium rounded-lg hover:bg-red-600 transition-colors shadow-sm"
+                >
+                  Remove Card
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Payment Method Confirmation Modal */}
+      {showRemovePaymentMethodModal && paymentMethodToRemove && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => {
+            setShowRemovePaymentMethodModal(false)
+            setPaymentMethodToRemove(null)
+          }} />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-brand-black">Remove Payment Method</h2>
+                <button
+                  onClick={() => {
+                    setShowRemovePaymentMethodModal(false)
+                    setPaymentMethodToRemove(null)
+                  }}
+                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="mb-6">
+                {(() => {
+                  const method = paymentMethods.find(m => m.id === paymentMethodToRemove)
+                  if (!method) {
+                    return <p className="text-sm text-brand-gray-600">Payment method not found.</p>
+                  }
+                  const methodDisplayName = method.type === 'visa' 
+                    ? `Visa **** ${method.last4}`
+                    : method.type === 'mastercard'
+                    ? `Mastercard **** ${method.last4}`
+                    : `ACH ${method.bankName}`
+                  const methodDetails = method.type === 'ach'
+                    ? method.cardholderName
+                    : `${String(method.expiryMonth || '').padStart(2, '0')}/${method.expiryYear || ''} | ${method.cardholderName}`
+                  
+                  return (
+                    <>
+                      <p className="text-sm text-brand-gray-600 mb-4">
+                        Are you sure you want to remove this payment method?
+                      </p>
+                      <div className="p-4 bg-brand-gray-50 border border-brand-gray-200 rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-brand-black">Payment Method</span>
+                          {method.type === 'visa' && (
+                            <div className="w-10 h-6 bg-[#1434CB] rounded flex items-center justify-center">
+                              <span className="text-white text-xs font-bold">VISA</span>
+                            </div>
+                          )}
+                          {method.type === 'mastercard' && (
+                            <div className="w-10 h-6 bg-[#EB001B] rounded flex items-center justify-center">
+                              <span className="text-white text-xs font-bold">MC</span>
+                            </div>
+                          )}
+                          {method.type === 'ach' && (
+                            <svg className="w-6 h-6 text-brand-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                            </svg>
+                          )}
+                        </div>
+                        <p className="text-base font-semibold text-brand-black mb-1">{methodDisplayName}</p>
+                        <p className="text-xs text-brand-gray-500">{methodDetails}</p>
+                        {method.isDefault && (
+                          <div className="mt-2">
+                            <span className="px-2 py-0.5 bg-brand-blue-100 text-brand-blue-700 text-xs font-semibold rounded">
+                              Default
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      {method.isDefault && (
+                        <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                          <div className="flex items-start gap-2">
+                            <svg className="w-4 h-4 text-orange-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <p className="text-xs text-orange-800">
+                              This is your default payment method. Removing it will automatically set another payment method as default if available.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowRemovePaymentMethodModal(false)
+                    setPaymentMethodToRemove(null)
+                  }}
+                  className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (paymentMethodToRemove) {
+                      const methodToRemove = paymentMethods.find(m => m.id === paymentMethodToRemove)
+                      const wasDefault = methodToRemove?.isDefault
+                      
+                      setPaymentMethods(prev => {
+                        const filtered = prev.filter(m => m.id !== paymentMethodToRemove)
+                        // If removed method was default and there are other methods, set first one as default
+                        if (wasDefault && filtered.length > 0) {
+                          return filtered.map((m, index) => ({
+                            ...m,
+                            isDefault: index === 0,
+                          }))
+                        }
+                        return filtered
+                      })
+                      
+                      setShowRemovePaymentMethodModal(false)
+                      setPaymentMethodToRemove(null)
+                      showToastMessage('Payment method removed successfully')
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-500 text-white text-sm font-medium rounded-lg hover:bg-red-600 transition-colors shadow-sm"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Address Confirmation Modal */}
+      {showRemoveAddressModal && addressToRemove && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => {
+            setShowRemoveAddressModal(false)
+            setAddressToRemove(null)
+          }} />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-brand-black">Remove Address</h2>
+                <button
+                  onClick={() => {
+                    setShowRemoveAddressModal(false)
+                    setAddressToRemove(null)
+                  }}
+                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="mb-6">
+                {(() => {
+                  const address = addresses.find(a => a.id === addressToRemove)
+                  if (!address) {
+                    return <p className="text-sm text-brand-gray-600">Address not found.</p>
+                  }
+                  
+                  return (
+                    <>
+                      <p className="text-sm text-brand-gray-600 mb-4">
+                        Are you sure you want to remove this address?
+                      </p>
+                      <div className="p-4 bg-brand-gray-50 border border-brand-gray-200 rounded-lg">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-base font-medium text-brand-black">
+                            {address.firstName} {address.lastName}
+                          </span>
+                          {address.isDefault && (
+                            <span className="px-2 py-0.5 bg-brand-blue-100 text-brand-blue-700 text-xs font-semibold rounded">
+                              Default
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-brand-gray-600 mb-1">{address.addressLine1}</p>
+                        <p className="text-sm text-brand-gray-600">
+                          {address.zipCode}, {address.city}, {address.state}, {address.country}
+                        </p>
+                      </div>
+                      {address.isDefault && (
+                        <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                          <div className="flex items-start gap-2">
+                            <svg className="w-4 h-4 text-orange-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <p className="text-xs text-orange-800">
+                              This is your default address. Removing it will automatically set another address as default if available.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowRemoveAddressModal(false)
+                    setAddressToRemove(null)
+                  }}
+                  className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (addressToRemove) {
+                      handleRemoveAddress(addressToRemove)
+                      setShowRemoveAddressModal(false)
+                      setAddressToRemove(null)
+                      showToastMessage('Address removed successfully')
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-500 text-white text-sm font-medium rounded-lg hover:bg-red-600 transition-colors shadow-sm"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change Password Modal */}
+      {showChangePasswordModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowChangePasswordModal(false)} />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="mb-6">
+                <h2 className="text-xl font-semibold text-brand-black mb-1">Password & Security</h2>
+                <p className="text-sm text-brand-gray-600">Manage your password and security settings</p>
+              </div>
+
+              {/* Modal Content */}
+              <div className="space-y-4">
+                {/* Current Password */}
+                <div>
+                  <label className="block text-sm font-medium text-brand-black mb-2">Current Password</label>
+                  <input
+                    type="password"
+                    value={passwordForm.currentPassword}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                    className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent"
+                    placeholder="Enter current password"
+                  />
+                </div>
+
+                {/* New Password */}
+                <div>
+                  <label className="block text-sm font-medium text-brand-black mb-2">New Password</label>
+                  <input
+                    type="password"
+                    value={passwordForm.newPassword}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                    className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent"
+                    placeholder="Enter new password"
+                  />
+                </div>
+
+                {/* Confirm New Password */}
+                <div>
+                  <label className="block text-sm font-medium text-brand-black mb-2">Confirm New Password</label>
+                  <input
+                    type="password"
+                    value={passwordForm.confirmPassword}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                    className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent"
+                    placeholder="Confirm new password"
+                  />
+                </div>
+
+                {/* Password Requirements */}
+                <div className="pt-2">
+                  <p className="text-sm font-medium text-brand-black mb-3">Password Requirements</p>
+                  <div className="space-y-2">
+                    {(() => {
+                      const requirements = [
+                        {
+                          label: 'At least 8 characters',
+                          met: passwordForm.newPassword.length >= 8,
+                        },
+                        {
+                          label: 'At least one uppercase letter',
+                          met: /[A-Z]/.test(passwordForm.newPassword),
+                        },
+                        {
+                          label: 'At least one lowercase letter',
+                          met: /[a-z]/.test(passwordForm.newPassword),
+                        },
+                        {
+                          label: 'At least one number',
+                          met: /[0-9]/.test(passwordForm.newPassword),
+                        },
+                        {
+                          label: 'At least one special character',
+                          met: /[!@#$%^&*(),.?":{}|<>]/.test(passwordForm.newPassword),
+                        },
+                      ]
+                      return requirements.map((req, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                          <svg 
+                            className={`w-5 h-5 flex-shrink-0 ${req.met ? 'text-brand-blue-600' : 'text-brand-gray-300'}`}
+                            fill="none" 
+                            stroke="currentColor" 
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          <p className={`text-sm ${req.met ? 'text-brand-black' : 'text-brand-gray-500'}`}>
+                            {req.label}
+                          </p>
+                        </div>
+                      ))
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-end gap-3 mt-6 pt-6 border-t border-brand-gray-200">
+                <button
+                  onClick={() => {
+                    setShowChangePasswordModal(false)
+                    setPasswordForm({
+                      currentPassword: '',
+                      newPassword: '',
+                      confirmPassword: '',
+                    })
+                  }}
+                  className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    // Validate password requirements
+                    const requirements = [
+                      passwordForm.newPassword.length >= 8,
+                      /[A-Z]/.test(passwordForm.newPassword),
+                      /[a-z]/.test(passwordForm.newPassword),
+                      /[0-9]/.test(passwordForm.newPassword),
+                      /[!@#$%^&*(),.?":{}|<>]/.test(passwordForm.newPassword),
+                    ]
+                    const allRequirementsMet = requirements.every(req => req === true)
+                    
+                    if (!passwordForm.currentPassword) {
+                      showToastMessage('Please enter your current password', 'error')
+                      return
+                    }
+                    if (!passwordForm.newPassword) {
+                      showToastMessage('Please enter a new password', 'error')
+                      return
+                    }
+                    if (!allRequirementsMet) {
+                      showToastMessage('Please meet all password requirements', 'error')
+                      return
+                    }
+                    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+                      showToastMessage('New passwords do not match', 'error')
+                      return
+                    }
+                    if (passwordForm.currentPassword === passwordForm.newPassword) {
+                      showToastMessage('New password must be different from current password', 'error')
+                      return
+                    }
+                    
+                    // In a real app, this would make an API call to change the password
+                    showToastMessage('Password changed successfully')
+                    setShowChangePasswordModal(false)
+                    setPasswordForm({
+                      currentPassword: '',
+                      newPassword: '',
+                      confirmPassword: '',
+                    })
+                  }}
+                  className="px-4 py-2 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Passkey Modal */}
+      {showAddPasskeyModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowAddPasskeyModal(false)} />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-xl font-semibold text-brand-black mb-1">Add Passkey</h2>
+                  <p className="text-sm text-brand-gray-600">Set up a passkey for faster, more secure sign-in</p>
+                </div>
+                <button
+                  onClick={() => setShowAddPasskeyModal(false)}
+                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="mb-6">
+                <div className="p-4 bg-brand-blue-50 border border-brand-blue-200 rounded-lg mb-4">
+                  <div className="flex items-start gap-3">
+                    <svg className="w-5 h-5 text-brand-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div>
+                      <p className="text-sm font-medium text-brand-blue-800 mb-1">What happens next?</p>
+                      <p className="text-xs text-brand-blue-700">
+                        You&apos;ll be prompted to use your device&apos;s biometric authentication (Face ID, Touch ID, or Windows Hello) or enter your device PIN to create the passkey.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3">
+                    <svg className="w-5 h-5 text-brand-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <p className="text-sm text-brand-gray-700">More secure than passwords</p>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <svg className="w-5 h-5 text-brand-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <p className="text-sm text-brand-gray-700">Faster sign-in experience</p>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <svg className="w-5 h-5 text-brand-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <p className="text-sm text-brand-gray-700">Works across all your devices</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setShowAddPasskeyModal(false)}
+                  className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (typeof window !== 'undefined' && 'PublicKeyCredential' in window) {
+                      // Close modal first, then trigger WebAuthn
+                      setShowAddPasskeyModal(false)
+                      // In a real app, this would trigger WebAuthn API
+                      // For now, we'll simulate adding a passkey
+                      setTimeout(() => {
+                        const deviceName = navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('iPad')
+                          ? 'iPhone/iPad'
+                          : navigator.userAgent.includes('Mac')
+                          ? 'MacBook'
+                          : navigator.userAgent.includes('Windows')
+                          ? 'Windows PC'
+                          : 'Device'
+                        
+                        const newPasskey: Passkey = {
+                          id: `passkey-${Date.now()}`,
+                          name: `${deviceName} - ${new Date().toLocaleDateString()}`,
+                          createdAt: new Date().toISOString().split('T')[0],
+                          lastUsed: undefined,
+                          deviceType: 'device',
+                        }
+                        setPasskeys([...passkeys, newPasskey])
+                        showToastMessage('Passkey added successfully')
+                      }, 500)
+                    } else {
+                      showToastMessage('Passkeys are not supported in this browser', 'error')
+                      setShowAddPasskeyModal(false)
+                    }
+                  }}
+                  className="px-4 py-2 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm"
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Passkey Confirmation Modal */}
+      {showRemovePasskeyModal && passkeyToRemove && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => {
+            setShowRemovePasskeyModal(false)
+            setPasskeyToRemove(null)
+          }} />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-brand-black">Remove Passkey</h2>
+                <button
+                  onClick={() => {
+                    setShowRemovePasskeyModal(false)
+                    setPasskeyToRemove(null)
+                  }}
+                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="mb-6">
+                {(() => {
+                  const passkey = passkeys.find(p => p.id === passkeyToRemove)
+                  if (!passkey) {
+                    return <p className="text-sm text-brand-gray-600">Passkey not found.</p>
+                  }
+                  
+                  return (
+                    <>
+                      <p className="text-sm text-brand-gray-600 mb-4">
+                        Are you sure you want to remove this passkey?
+                      </p>
+                      <div className="p-4 bg-brand-gray-50 border border-brand-gray-200 rounded-lg">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 bg-brand-blue-100 rounded-lg flex items-center justify-center">
+                            {passkey.deviceType === 'device' ? (
+                              <svg className="w-7 h-7 text-brand-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                              </svg>
+                            ) : (
+                              <svg className="w-7 h-7 text-brand-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                              </svg>
+                            )}
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-brand-black">{passkey.name}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <p className="text-xs text-brand-gray-600">Created {new Date(passkey.createdAt).toLocaleDateString()}</p>
+                              {passkey.lastUsed && (
+                                <>
+                                  <span className="text-xs text-brand-gray-400">•</span>
+                                  <p className="text-xs text-brand-gray-600">Last used {new Date(passkey.lastUsed).toLocaleDateString()}</p>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                        <div className="flex items-start gap-2">
+                          <svg className="w-4 h-4 text-orange-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          <p className="text-xs text-orange-800">
+                            You will need to use your password or another passkey to sign in after removing this passkey.
+                          </p>
+                        </div>
+                      </div>
+                    </>
+                  )
+                })()}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowRemovePasskeyModal(false)
+                    setPasskeyToRemove(null)
+                  }}
+                  className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (passkeyToRemove) {
+                      setPasskeys(passkeys.filter(p => p.id !== passkeyToRemove))
+                      setShowRemovePasskeyModal(false)
+                      setPasskeyToRemove(null)
+                      showToastMessage('Passkey removed successfully')
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-500 text-white text-sm font-medium rounded-lg hover:bg-red-600 transition-colors shadow-sm"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Credit History Modal */}
+      {showCreditHistory && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowCreditHistory(false)} />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-3xl w-full p-6" onClick={(e) => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-semibold text-brand-black">Store Credit History</h2>
+                  <p className="text-sm text-brand-gray-600 mt-1">View your store credit transactions and balance history</p>
+                </div>
+                <button
+                  onClick={() => setShowCreditHistory(false)}
+                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Current Balance Summary */}
+              <div className="mb-6 p-4 bg-brand-blue-50 border border-brand-blue-200 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-brand-gray-600 mb-1">Current Balance</p>
+                    <p className="text-3xl font-semibold text-brand-black">$50.00</p>
+                  </div>
+                  <svg className="w-12 h-12 text-brand-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Transaction History */}
+              <div className="space-y-4 max-h-[400px] overflow-y-auto">
+                <div className="flex items-center justify-between p-4 border border-brand-gray-200 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-brand-black">Credit Added</p>
+                      <p className="text-xs text-brand-gray-500">Return - Order #INV001</p>
+                      <p className="text-xs text-brand-gray-400">Sep 15, 2024</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold text-green-600">+$50.00</p>
+                    <p className="text-xs text-brand-gray-500">Balance: $50.00</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-4 border border-brand-gray-200 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                      <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-brand-black">Credit Used</p>
+                      <p className="text-xs text-brand-gray-500">Purchase - Order #INV002</p>
+                      <p className="text-xs text-brand-gray-400">Aug 20, 2024</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold text-red-600">-$25.00</p>
+                    <p className="text-xs text-brand-gray-500">Balance: $25.00</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-4 border border-brand-gray-200 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-brand-black">Credit Added</p>
+                      <p className="text-xs text-brand-gray-500">Return - Order #INV003</p>
+                      <p className="text-xs text-brand-gray-400">Jul 10, 2024</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold text-green-600">+$25.00</p>
+                    <p className="text-xs text-brand-gray-500">Balance: $25.00</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-4 border border-brand-gray-200 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-brand-black">Credit Added</p>
+                      <p className="text-xs text-brand-gray-500">Promotional Credit</p>
+                      <p className="text-xs text-brand-gray-400">Jun 1, 2024</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold text-green-600">+$25.00</p>
+                    <p className="text-xs text-brand-gray-500">Balance: $25.00</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-end mt-6 pt-6 border-t border-brand-gray-200">
+                <button
+                  onClick={() => setShowCreditHistory(false)}
+                  className="px-4 py-2 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

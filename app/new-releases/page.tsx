@@ -250,13 +250,36 @@ export default function NewReleasesPage() {
     return () => window.removeEventListener('wishlistUpdated', handleWishlistUpdate as EventListener)
   }, [])
 
-  // Get new releases data
-  const allNewReleases = getNewReleases(12)
-  const justDropped = getNewReleases(12)
-  const trendingNew = getNewReleases(8)
-  const newInWomen = getNewReleasesByCategory('Women', 8)
-  const newInMen = getNewReleasesByCategory('Men', 8)
-  const newInAccessories = getNewReleasesByCategory('Accessories', 8)
+  const [allNewReleases, setAllNewReleases] = useState<Product[]>([])
+  const [justDropped, setJustDropped] = useState<Product[]>([])
+  const [trendingNew, setTrendingNew] = useState<Product[]>([])
+  const [newInWomen, setNewInWomen] = useState<Product[]>([])
+  const [newInMen, setNewInMen] = useState<Product[]>([])
+  const [newInAccessories, setNewInAccessories] = useState<Product[]>([])
+  const [allProducts, setAllProducts] = useState<Product[]>([])
+
+  // Load products on mount
+  useEffect(() => {
+    const loadProducts = async () => {
+      const [all, just, trending, women, men, accessories, allProds] = await Promise.all([
+        getNewReleases(12),
+        getNewReleases(12),
+        getNewReleases(8),
+        getNewReleasesByCategory('Women', 8),
+        getNewReleasesByCategory('Men', 8),
+        getNewReleasesByCategory('Accessories', 8),
+        getAllProducts(),
+      ])
+      setAllNewReleases(all)
+      setJustDropped(just)
+      setTrendingNew(trending)
+      setNewInWomen(women)
+      setNewInMen(men)
+      setNewInAccessories(accessories)
+      setAllProducts(allProds)
+    }
+    loadProducts()
+  }, [])
 
   // Calculate total products count
   const totalProducts = useMemo(() => {
@@ -511,7 +534,7 @@ export default function NewReleasesPage() {
       {quickViewProduct && (
         <QuickViewModal
           product={quickViewProduct}
-          allProducts={getAllProducts()}
+          allProducts={allProducts}
           isOpen={!!quickViewProduct}
           onClose={() => setQuickViewProduct(null)}
           onAddToCart={handleAddToCart}
