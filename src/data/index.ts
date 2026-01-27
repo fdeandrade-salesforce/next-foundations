@@ -50,6 +50,21 @@ export function getRepositories(): IDataRepositories {
     
     switch (provider) {
       case 'supabase':
+        // Validate Supabase env vars before creating repositories
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+        const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+        
+        if (!supabaseUrl || !supabaseAnonKey) {
+          throw new Error(
+            'DATA_PROVIDER=supabase requires Supabase environment variables.\n\n' +
+            'Please set:\n' +
+            '  - NEXT_PUBLIC_SUPABASE_URL\n' +
+            '  - NEXT_PUBLIC_SUPABASE_ANON_KEY\n\n' +
+            'You can find these in your Supabase project settings under API.\n' +
+            'Or set DATA_PROVIDER=mock to use mock data instead.'
+          )
+        }
+        
         console.log('[Data Layer] Using Supabase provider')
         _repositories = createSupabaseRepositories()
         break
