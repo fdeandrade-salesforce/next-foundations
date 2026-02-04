@@ -31,3 +31,4 @@ The project structure is set up with Next.js, TypeScript, and Tailwind CSS. To c
 
 Once provided, the design will be implemented to match the Figma specifications.
 
+# next-foundations
