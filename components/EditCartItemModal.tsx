@@ -190,12 +190,12 @@ export default function EditCartItemModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+        className="fixed inset-0 backdrop-default transition-opacity"
         onClick={onClose}
       />
 
       {/* Modal Container */}
-      <div className="relative bg-white rounded-none sm:rounded-2xl shadow-xl max-w-5xl w-full h-full sm:h-auto sm:max-h-[90vh] flex flex-col">
+      <div className="relative bg-card rounded-none sm:rounded-modal shadow-modal max-w-5xl w-full h-full sm:h-auto sm:max-h-[90vh] flex flex-col">
         {/* Close Button */}
         <button
           onClick={onClose}

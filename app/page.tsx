@@ -8,7 +8,7 @@ import ProductGrid from '../components/ProductGrid'
 import Footer from '../components/Footer'
 import QuickViewModal from '../components/QuickViewModal'
 import NotifyMeModal from '../components/NotifyMeModal'
-import { getFeaturedProducts, getNewArrivals, getAllProducts } from '../lib/products'
+import { getFeaturedProducts, getNewArrivals, getAllProductsWithVariants } from '../lib/products'
 import { Product } from '../components/ProductListingPage'
 import { toggleWishlist, getWishlistIds } from '../lib/wishlist'
 import { addToCart } from '../lib/cart'
@@ -27,7 +27,7 @@ export default function Home() {
       const [featured, newArr, all] = await Promise.all([
         getFeaturedProducts(),
         getNewArrivals(),
-        getAllProducts(),
+        getAllProductsWithVariants(),
       ])
       setFeaturedProducts(featured)
       setNewArrivals(newArr)
@@ -56,8 +56,8 @@ export default function Home() {
     return false
   }
 
-  const handleAddToCart = (product: Product, size?: string, color?: string) => {
-    addToCart(product, 1, size, color)
+  const handleAddToCart = (product: Product, quantity: number = 1, size?: string, color?: string) => {
+    addToCart(product, quantity, size, color)
   }
 
   const handleAddToCartSimple = (product: Product) => {
@@ -85,8 +85,9 @@ export default function Home() {
     console.log(`Notify ${email} when ${notifyMeProduct?.name} is available`)
   }
 
-  const handleAddToWishlist = (product: Product) => {
-    const inWishlist = toggleWishlist(product)
+  const handleAddToWishlist = (product: Product, size?: string, color?: string) => {
+    // Only pass size/color if they were explicitly selected (from QuickViewModal)
+    const inWishlist = toggleWishlist(product, size, color, size || color ? 'pdp' : 'card')
     console.log(inWishlist ? 'Added to wishlist:' : 'Removed from wishlist:', product.id)
   }
 
@@ -108,6 +109,7 @@ export default function Home() {
             onUnifiedAction={handleUnifiedAction}
             onAddToWishlist={handleAddToWishlist}
             wishlistIds={wishlistIds}
+            allProducts={allProducts}
           />
         </div>
 
@@ -121,6 +123,7 @@ export default function Home() {
               onUnifiedAction={handleUnifiedAction}
               onAddToWishlist={handleAddToWishlist}
               wishlistIds={wishlistIds}
+              allProducts={allProducts}
             />
           </div>
         </div>
@@ -132,7 +135,7 @@ export default function Home() {
               Step into Elegance
             </h2>
             <p className="text-lg text-brand-gray-700 leading-relaxed mb-8 font-normal">
-              At Market Street, we believe design should be accessible, innovative, and timeless. 
+              At Salesforce Foundations, we believe design should be accessible, innovative, and timeless. 
               Our collections are crafted for the modern individual who values quality, 
               form, and lasting beauty.
             </p>
@@ -180,7 +183,7 @@ export default function Home() {
       {quickViewProduct && (
         <QuickViewModal
           product={quickViewProduct}
-          allProducts={allProducts}
+          productVariants={[]}
           isOpen={!!quickViewProduct}
           onClose={() => setQuickViewProduct(null)}
           onAddToCart={handleAddToCart}

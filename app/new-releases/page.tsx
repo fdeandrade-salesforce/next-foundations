@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useMemo } from 'react'
+import Link from 'next/link'
 import Navigation from '../../components/Navigation'
 import AnnouncementBar from '../../components/AnnouncementBar'
 import ProductCard from '../../components/ProductCard'
@@ -9,7 +10,7 @@ import QuickViewModal from '../../components/QuickViewModal'
 import NotifyMeModal from '../../components/NotifyMeModal'
 import LazyImage from '../../components/LazyImage'
 import PromoBanner from '../../components/PromoBanner'
-import { getNewReleases, getNewReleasesByCategory, getAllProducts } from '../../lib/products'
+import { getNewReleases, getNewReleasesByCategory, getAllProductsWithVariants } from '../../lib/products'
 import { Product } from '../../components/ProductListingPage'
 import { toggleWishlist, getWishlistIds } from '../../lib/wishlist'
 import { addToCart } from '../../lib/cart'
@@ -20,9 +21,9 @@ interface CarouselSectionProps {
   shopAllLink: string
   products: Product[]
   onUnifiedAction: (product: Product) => void
-  onAddToCartSimple: (product: Product) => void
-  onAddToWishlist: (product: Product) => void
+  onAddToWishlist: (product: Product, size?: string, color?: string) => void
   wishlistIds: string[]
+  allProducts: Product[]
 }
 
 function CarouselSection({
@@ -31,9 +32,9 @@ function CarouselSection({
   shopAllLink,
   products,
   onUnifiedAction,
-  onAddToCartSimple,
   onAddToWishlist,
   wishlistIds,
+  allProducts,
 }: CarouselSectionProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -199,10 +200,9 @@ function CarouselSection({
               <ProductCard
                 product={product}
                 onUnifiedAction={onUnifiedAction}
-                onAddToCart={onAddToCartSimple}
                 onAddToWishlist={onAddToWishlist}
-                showQuickAdd={true}
                 isInWishlist={wishlistIds.includes(product.id)}
+                allProducts={allProducts}
               />
             </div>
           ))}
@@ -268,7 +268,7 @@ export default function NewReleasesPage() {
         getNewReleasesByCategory('Women', 8),
         getNewReleasesByCategory('Men', 8),
         getNewReleasesByCategory('Accessories', 8),
-        getAllProducts(),
+        getAllProductsWithVariants(),
       ])
       setAllNewReleases(all)
       setJustDropped(just)
@@ -302,8 +302,8 @@ export default function NewReleasesPage() {
     return false
   }
 
-  const handleAddToCart = (product: Product, size?: string, color?: string) => {
-    addToCart(product, 1, size, color)
+  const handleAddToCart = (product: Product, quantity: number = 1, size?: string, color?: string) => {
+    addToCart(product, quantity, size, color)
   }
 
   const handleAddToCartSimple = (product: Product) => {
@@ -328,8 +328,9 @@ export default function NewReleasesPage() {
     console.log(`Notify ${email} when ${notifyMeProduct?.name} is available`)
   }
 
-  const handleAddToWishlist = (product: Product) => {
-    const inWishlist = toggleWishlist(product)
+  const handleAddToWishlist = (product: Product, size?: string, color?: string) => {
+    // Only pass size/color if they were explicitly selected (from QuickViewModal)
+    const inWishlist = toggleWishlist(product, size, color, size || color ? 'pdp' : 'card')
     console.log(inWishlist ? 'Added to wishlist:' : 'Removed from wishlist:', product.id)
   }
 
@@ -383,19 +384,26 @@ export default function NewReleasesPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Breadcrumbs */}
           <nav className="flex items-center gap-2 text-sm text-brand-gray-500 mb-6">
-            {breadcrumbs.map((crumb, idx) => (
-              <React.Fragment key={idx}>
-                {idx > 0 && <span>&gt;</span>}
-                <a href={crumb.href} className="hover:text-brand-blue-500 transition-colors">
-                  {crumb.label}
-                </a>
-              </React.Fragment>
-            ))}
+            {breadcrumbs.map((crumb, idx) => {
+              const isLast = idx === breadcrumbs.length - 1
+              return (
+                <React.Fragment key={idx}>
+                  {idx > 0 && <span>&gt;</span>}
+                  {isLast ? (
+                    <span className="text-brand-black">{crumb.label}</span>
+                  ) : (
+                    <Link href={crumb.href} className="hover:text-brand-blue-500 transition-colors">
+                      {crumb.label}
+                    </Link>
+                  )}
+                </React.Fragment>
+              )
+            })}
           </nav>
           <div className="flex flex-col lg:flex-row gap-8 py-8">
             {/* Left Rail Navigation */}
             <aside className="w-full lg:w-64 flex-shrink-0">
-              <nav className="sticky top-8">
+              <nav className="sticky top-24">
                 <h2 className="text-sm font-semibold text-brand-gray-400 uppercase tracking-wider mb-4">
                   Browse
                 </h2>
@@ -424,9 +432,9 @@ export default function NewReleasesPage() {
                   shopAllLink="/shop"
                   products={allNewReleases}
                   onUnifiedAction={handleUnifiedAction}
-                  onAddToCartSimple={handleAddToCartSimple}
-                  onAddToWishlist={handleAddToWishlist}
+onAddToWishlist={handleAddToWishlist}
                   wishlistIds={wishlistIds}
+                  allProducts={allProducts}
                 />
               )}
 
@@ -438,9 +446,9 @@ export default function NewReleasesPage() {
                   shopAllLink="/shop"
                   products={justDropped}
                   onUnifiedAction={handleUnifiedAction}
-                  onAddToCartSimple={handleAddToCartSimple}
-                  onAddToWishlist={handleAddToWishlist}
+onAddToWishlist={handleAddToWishlist}
                   wishlistIds={wishlistIds}
+                  allProducts={allProducts}
                 />
               )}
 
@@ -464,9 +472,9 @@ export default function NewReleasesPage() {
                   shopAllLink="/shop"
                   products={trendingNew}
                   onUnifiedAction={handleUnifiedAction}
-                  onAddToCartSimple={handleAddToCartSimple}
-                  onAddToWishlist={handleAddToWishlist}
+onAddToWishlist={handleAddToWishlist}
                   wishlistIds={wishlistIds}
+                  allProducts={allProducts}
                 />
               )}
 
@@ -478,9 +486,9 @@ export default function NewReleasesPage() {
                   shopAllLink="/women"
                   products={newInWomen}
                   onUnifiedAction={handleUnifiedAction}
-                  onAddToCartSimple={handleAddToCartSimple}
-                  onAddToWishlist={handleAddToWishlist}
+onAddToWishlist={handleAddToWishlist}
                   wishlistIds={wishlistIds}
+                  allProducts={allProducts}
                 />
               )}
 
@@ -504,9 +512,9 @@ export default function NewReleasesPage() {
                   shopAllLink="/men"
                   products={newInMen}
                   onUnifiedAction={handleUnifiedAction}
-                  onAddToCartSimple={handleAddToCartSimple}
-                  onAddToWishlist={handleAddToWishlist}
+onAddToWishlist={handleAddToWishlist}
                   wishlistIds={wishlistIds}
+                  allProducts={allProducts}
                 />
               )}
 
@@ -518,9 +526,9 @@ export default function NewReleasesPage() {
                   shopAllLink="/accessories"
                   products={newInAccessories}
                   onUnifiedAction={handleUnifiedAction}
-                  onAddToCartSimple={handleAddToCartSimple}
-                  onAddToWishlist={handleAddToWishlist}
+onAddToWishlist={handleAddToWishlist}
                   wishlistIds={wishlistIds}
+                  allProducts={allProducts}
                 />
               )}
             </div>
@@ -534,7 +542,7 @@ export default function NewReleasesPage() {
       {quickViewProduct && (
         <QuickViewModal
           product={quickViewProduct}
-          allProducts={allProducts}
+          productVariants={[]}
           isOpen={!!quickViewProduct}
           onClose={() => setQuickViewProduct(null)}
           onAddToCart={handleAddToCart}

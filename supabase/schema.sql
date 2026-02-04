@@ -1,4 +1,4 @@
--- Market Street E-commerce Database Schema
+-- Salesforce Foundations E-commerce Database Schema
 -- Run this in your Supabase SQL Editor to create all tables
 
 -- Enable UUID extension

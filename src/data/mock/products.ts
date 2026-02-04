@@ -12,7 +12,7 @@ export const mockProducts: Product[] = [
   {
     id: 'pure-cube-white',
     name: 'Pure Cube',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 49.00,
     image: '/images/products/pure-cube-white-1.png',
     images: [
@@ -34,12 +34,43 @@ export const mockProducts: Product[] = [
     shortDescription: 'Minimalist cube design with perfect proportions.',
     isNew: true,
     promotionalMessage: 'Extra 20% Off with code WELCOME20',
+    description: 'The Pure Cube is the essence of geometric perfection. Each face is precision-crafted to exact 90-degree angles, creating a form that embodies mathematical beauty. The matte white finish provides a clean, contemporary aesthetic that complements any interior style.',
+    keyBenefits: [
+      'Precision-crafted proportions',
+      'Fingerprint-resistant matte finish',
+      'Weighted base for stability',
+    ],
+    ingredients: [
+      'High-density composite resin',
+      'UV-resistant matte coating',
+      'Lead-free weighted core',
+    ],
+    usageInstructions: [
+      'Place on any flat, stable surface',
+      'Position near natural light for shadow effects',
+      'Pair with other geometric forms',
+    ],
+    careInstructions: [
+      'Dust with soft, dry microfiber cloth',
+      'Avoid harsh chemicals',
+      'Keep away from direct heat',
+    ],
+    technicalSpecs: {
+      'Small': '3" × 3" × 3"',
+      'Medium': '4.5" × 4.5" × 4.5"',
+      'Large': '6" × 6" × 6"',
+      'Material': 'Composite resin',
+      'Finish': 'Matte white',
+    },
+    deliveryEstimate: '3-5 business days',
+    returnsPolicy: '30-day hassle-free returns',
+    warranty: '2-year warranty',
   },
   // Pure Cube - Black
   {
     id: 'pure-cube-black',
     name: 'Pure Cube',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 49.00,
     sku: 'PC-002-BLK',
     shortDescription: 'Minimalist cube design with perfect proportions.',
@@ -59,12 +90,18 @@ export const mockProducts: Product[] = [
     stockQuantity: 0,
     rating: 4.9,
     reviewCount: 89,
+    description: 'The Pure Cube in black offers a bold, dramatic presence. The deep matte black finish absorbs light, creating striking negative space in any composition.',
+    keyBenefits: [
+      'Bold dramatic presence',
+      'Deep matte black finish',
+      'Perfect geometric proportions',
+    ],
   },
   // Pure Cube - Gray
   {
     id: 'pure-cube-gray',
     name: 'Pure Cube',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 75.00,
     originalPrice: 89.00,
     image: '/images/products/pure-cube-gray-1.png',
@@ -85,12 +122,18 @@ export const mockProducts: Product[] = [
     reviewCount: 56,
     sku: 'PC-003-GRY',
     shortDescription: 'Minimalist cube design with perfect proportions.',
+    description: 'The Pure Cube in gray strikes the perfect balance between light and dark. Its neutral tone works seamlessly with any décor palette.',
+    keyBenefits: [
+      'Versatile neutral tone',
+      'Blends with any décor',
+      'Perfect proportions',
+    ],
   },
   // Solid Cylinder
   {
     id: 'solid-cylinder',
     name: 'Solid Cylinder',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 59.00,
     sku: 'SC-001-NTR',
     shortDescription: 'Robust cylindrical form with timeless appeal.',
@@ -110,12 +153,32 @@ export const mockProducts: Product[] = [
     reviewCount: 78,
     isBestSeller: true,
     promotionalMessage: 'Free shipping on orders over $50',
+    description: 'The Solid Cylinder brings classical geometry into contemporary spaces. Its perfect circular cross-section and smooth vertical lines create a sense of stability and permanence.',
+    keyBenefits: [
+      'Substantial weighted presence',
+      'Doubles as decorative bookend',
+      'Smooth tactile finish',
+    ],
+    careInstructions: [
+      'Wipe clean with soft, dry cloth',
+      'Avoid extreme temperatures',
+      'Handle with care',
+    ],
+    technicalSpecs: {
+      'Dimensions': '4" diameter × 6" height',
+      'Weight': '2.1 lbs',
+      'Material': 'Solid composite stone',
+      'Finish': 'Natural matte',
+    },
+    deliveryEstimate: '3-5 business days',
+    returnsPolicy: '30-day hassle-free returns',
+    warranty: '2-year warranty',
   },
   // Soft Sphere
   {
     id: 'soft-sphere',
     name: 'Soft Sphere',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 45.00,
     originalPrice: 55.00,
     sku: 'SS-001-GRY',
@@ -135,12 +198,32 @@ export const mockProducts: Product[] = [
     stockQuantity: 15,
     rating: 4.5,
     reviewCount: 92,
+    description: 'The Soft Sphere introduces organic curves to geometric design. Its perfectly smooth surface and gentle gray tone bring a calming presence to any space.',
+    keyBenefits: [
+      'Self-balancing design',
+      'Calming organic curves',
+      'Smooth tactile surface',
+    ],
+    careInstructions: [
+      'Clean with soft, lint-free cloth',
+      'Avoid textured surfaces',
+      'Roll gently when moving',
+    ],
+    technicalSpecs: {
+      'Diameter': '5" (12.7 cm)',
+      'Weight': '1.5 lbs',
+      'Material': 'Solid composite',
+      'Finish': 'Satin gray',
+    },
+    deliveryEstimate: '3-5 business days',
+    returnsPolicy: '30-day hassle-free returns',
+    warranty: '2-year warranty',
   },
   // Fine Cone
   {
     id: 'fine-cone',
     name: 'Fine Cone',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 39.00,
     sku: 'FC-001-NTR',
     shortDescription: 'Precise conical form with refined geometry.',
@@ -158,12 +241,24 @@ export const mockProducts: Product[] = [
     stockQuantity: 32,
     rating: 4.4,
     reviewCount: 45,
+    description: 'The Fine Cone showcases the elegance of tapered geometry. Its precise point draws the eye upward, creating a sense of aspiration and focus.',
+    keyBenefits: [
+      'Precision-tapered point',
+      'Stable circular base',
+      'Dynamic visual interest',
+    ],
+    technicalSpecs: {
+      'Base Diameter': '4"',
+      'Height': '6"',
+      'Material': 'Cast composite',
+      'Finish': 'Natural matte',
+    },
   },
   // Steady Prism
   {
     id: 'steady-prism',
     name: 'Steady Prism',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 65.00,
     sku: 'SP-001-NTR',
     shortDescription: 'Stable geometric prism with clean lines.',
@@ -183,12 +278,31 @@ export const mockProducts: Product[] = [
     reviewCount: 67,
     isNew: true,
     promotionalMessage: 'Buy 2 Get 1 Free',
+    description: 'The Steady Prism brings architectural drama to your space. Its triangular cross-section creates dynamic shadows that shift throughout the day.',
+    keyBenefits: [
+      'Dynamic shadow play',
+      'Self-supporting design',
+      'Architectural presence',
+    ],
+    careInstructions: [
+      'Wipe with soft cloth',
+      'Avoid direct harsh light',
+    ],
+    technicalSpecs: {
+      'Medium': '4" base × 6" height',
+      'Large': '5.5" base × 8" height',
+      'XL': '7" base × 11" height',
+      'Material': 'Cast composite',
+    },
+    deliveryEstimate: '3-5 business days',
+    returnsPolicy: '30-day hassle-free returns',
+    warranty: '2-year warranty',
   },
   // Dual Forms
   {
     id: 'dual-forms',
     name: 'Dual Forms',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 79.00,
     sku: 'DF-001-PAR',
     shortDescription: 'Complementary pair of geometric forms.',
@@ -207,12 +321,32 @@ export const mockProducts: Product[] = [
     rating: 4.8,
     reviewCount: 34,
     isLimitedEdition: true,
+    description: 'The Dual Forms embody the principle of complementary design. Two distinct yet harmonious shapes designed to create visual dialogue.',
+    keyBenefits: [
+      'Complementary pair design',
+      'Creates visual dialogue',
+      'Limited edition set',
+    ],
+    usageInstructions: [
+      'Display together for intended effect',
+      'Experiment with spacing',
+      'Try different angles',
+    ],
+    technicalSpecs: {
+      'Set': 'Two complementary pieces',
+      'Each Piece': 'Approx. 4" × 4" × 5"',
+      'Total Weight': '2.4 lbs',
+      'Material': 'Matched composite',
+    },
+    deliveryEstimate: '3-5 business days',
+    returnsPolicy: '30-day hassle-free returns',
+    warranty: '2-year warranty',
   },
   // Vertical Set
   {
     id: 'vertical-set',
     name: 'Vertical Set',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 89.00,
     originalPrice: 110.00,
     sku: 'VS-001-MIX',
@@ -234,12 +368,32 @@ export const mockProducts: Product[] = [
     rating: 4.9,
     reviewCount: 156,
     isBestSeller: true,
+    description: 'Our bestselling collection. Three complementary geometric forms designed to stack, cascade, or stand alone with endless arrangement possibilities.',
+    keyBenefits: [
+      'Three versatile pieces',
+      'Infinite arrangements',
+      'Precision stacking fit',
+    ],
+    usageInstructions: [
+      'Stack vertically for height',
+      'Cascade for horizontal interest',
+      'Separate across shelves',
+    ],
+    technicalSpecs: {
+      'Includes': '3 graduated forms',
+      'Small': '3" × 3" × 4"',
+      'Medium': '4" × 4" × 5.5"',
+      'Large': '5" × 5" × 7"',
+    },
+    deliveryEstimate: '3-5 business days',
+    returnsPolicy: '30-day hassle-free returns',
+    warranty: '2-year warranty',
   },
   // Offset Pair
   {
     id: 'offset-pair',
     name: 'Offset Pair',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 69.00,
     sku: 'OP-001-PAR',
     shortDescription: 'Asymmetrical pair with dynamic balance.',
@@ -256,12 +410,18 @@ export const mockProducts: Product[] = [
     stockQuantity: 0,
     rating: 4.6,
     reviewCount: 28,
+    description: 'The Offset Pair explores asymmetrical balance. Two forms of different heights and proportions that achieve harmony through contrast.',
+    keyBenefits: [
+      'Asymmetrical balance',
+      'Dynamic visual tension',
+      'Conversation starter',
+    ],
   },
   // Tilted Column
   {
     id: 'tilted-column',
     name: 'Tilted Column',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 55.00,
     sku: 'TC-001-NTR',
     shortDescription: 'Dynamic column with subtle angular tilt.',
@@ -277,12 +437,23 @@ export const mockProducts: Product[] = [
     stockQuantity: 27,
     rating: 4.3,
     reviewCount: 19,
+    description: 'The Tilted Column defies expectations with its subtle lean. Perfectly balanced despite its angle, it adds playful energy to any arrangement.',
+    keyBenefits: [
+      'Unexpected angular design',
+      'Perfectly balanced',
+      'Dynamic presence',
+    ],
+    technicalSpecs: {
+      'Tilt Angle': '7°',
+      'Material': 'Weighted composite',
+      'Available Sizes': 'S, M, L, XL',
+    },
   },
   // Spiral Accent
   {
     id: 'spiral-accent',
     name: 'Spiral Accent',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 75.00,
     image: '/images/products/spiral-accent-1.png',
     images: [
@@ -301,12 +472,30 @@ export const mockProducts: Product[] = [
     shortDescription: 'Elegant spiral accent with flowing curves.',
     isNew: true,
     promotionalMessage: 'Extra 25% Off with code EXTRA25',
+    description: 'The Spiral Accent captures motion in solid form. Its ascending curves create a sense of upward energy and growth.',
+    keyBenefits: [
+      'Hand-finished curves',
+      'Symbolic of growth',
+      'Sculptural presence',
+    ],
+    careInstructions: [
+      'Use soft brush for grooves',
+      'Handle by the base',
+    ],
+    technicalSpecs: {
+      'Medium': '4" base × 7" height',
+      'Large': '5.5" base × 10" height',
+      'Material': 'Cast composite',
+    },
+    deliveryEstimate: '3-5 business days',
+    returnsPolicy: '30-day hassle-free returns',
+    warranty: '2-year warranty',
   },
   // Floating Disk - White
   {
     id: 'floating-disk-white',
     name: 'Floating Disk',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 42.00,
     sku: 'FD-001-WHT',
     shortDescription: 'Minimalist disk design with subtle presence.',
@@ -324,12 +513,23 @@ export const mockProducts: Product[] = [
     storeAvailable: true,
     rating: 4.5,
     reviewCount: 63,
+    description: 'The Floating Disk appears to defy gravity with its thin profile and subtle elevation. A study in minimalism and restraint.',
+    keyBenefits: [
+      'Ultra-thin profile',
+      'Elevated base design',
+      'Minimalist statement',
+    ],
+    technicalSpecs: {
+      'Diameter': '6"',
+      'Thickness': '0.75"',
+      'Material': 'Precision composite',
+    },
   },
   // Floating Disk - Charcoal
   {
     id: 'floating-disk-charcoal',
     name: 'Floating Disk',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 42.00,
     sku: 'FD-002-CHR',
     shortDescription: 'Minimalist disk design with subtle presence.',
@@ -346,12 +546,18 @@ export const mockProducts: Product[] = [
     stockQuantity: 3,
     rating: 4.6,
     reviewCount: 47,
+    description: 'The Floating Disk in charcoal adds depth and sophistication. The dark tone emphasizes its geometric purity.',
+    keyBenefits: [
+      'Deep charcoal finish',
+      'Ultra-thin profile',
+      'Sophisticated presence',
+    ],
   },
   // Flow Form I
   {
     id: 'flow-form-i',
     name: 'Flow Form I',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 85.00,
     image: '/images/products/flow-form-i-1.png',
     images: [
@@ -370,12 +576,32 @@ export const mockProducts: Product[] = [
     shortDescription: 'Fluid abstract form with organic movement.',
     isBestSeller: true,
     promotionalMessage: 'Extra 15% Off with code FLOW15',
+    description: 'Flow Form I is where sculpture meets meditation. Its organic, wave-like contours are inspired by natural water movements and wind-sculpted stone.',
+    keyBenefits: [
+      'Each piece unique',
+      'Organic calming form',
+      'Multiple viewing angles',
+    ],
+    usageInstructions: [
+      'Position in natural light',
+      'Rotate to appreciate angles',
+      'Pair with Flow Form II',
+    ],
+    technicalSpecs: {
+      'Dimensions': '9" × 6" × 8"',
+      'Weight': '3.2 lbs',
+      'Material': 'Cast composite',
+      'Finish': 'Hand-polished satin',
+    },
+    deliveryEstimate: '3-5 business days',
+    returnsPolicy: '30-day hassle-free returns',
+    warranty: '2-year warranty',
   },
   // Flow Form II
   {
     id: 'flow-form-ii',
     name: 'Flow Form II',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 85.00,
     sku: 'FF-002-ABT',
     shortDescription: 'Fluid abstract form with organic movement.',
@@ -391,12 +617,18 @@ export const mockProducts: Product[] = [
     stockQuantity: 0,
     rating: 4.7,
     reviewCount: 38,
+    description: 'Flow Form II complements its sibling with contrasting curves. Together, they create a dialogue of organic movement.',
+    keyBenefits: [
+      'Complements Flow Form I',
+      'Contrasting curves',
+      'Sculptural statement',
+    ],
   },
   // Micro Spiral
   {
     id: 'micro-spiral',
     name: 'Micro Spiral',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 35.00,
     originalPrice: 45.00,
     sku: 'MS-001-ABT',
@@ -413,12 +645,23 @@ export const mockProducts: Product[] = [
     stockQuantity: 48,
     rating: 4.4,
     reviewCount: 89,
+    description: 'The Micro Spiral packs big design impact into a compact form. Perfect for desks, shelves, or intimate spaces.',
+    keyBenefits: [
+      'Compact size, big impact',
+      'Perfect for small spaces',
+      'Entry-level price point',
+    ],
+    technicalSpecs: {
+      'Height': '4"',
+      'Base': '2.5"',
+      'Weight': '0.8 lbs',
+    },
   },
   // Contrast Plane
   {
     id: 'contrast-plane',
     name: 'Contrast Plane',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 52.00,
     sku: 'CP-001-GEO',
     shortDescription: 'Bold geometric plane with striking contrast.',
@@ -434,12 +677,22 @@ export const mockProducts: Product[] = [
     stockQuantity: 21,
     rating: 4.5,
     reviewCount: 31,
+    description: 'The Contrast Plane explores the intersection of two surfaces. Its sharp edge creates a dramatic line that divides space.',
+    keyBenefits: [
+      'Sharp geometric edge',
+      'Dramatic visual impact',
+      'Two-tone design',
+    ],
+    technicalSpecs: {
+      'Dimensions': '6" × 4" × 2"',
+      'Material': 'Dual-finish composite',
+    },
   },
   // Shadow Edge
   {
     id: 'shadow-edge',
     name: 'Shadow Edge',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 58.00,
     image: '/images/products/shadow-edge-1.png',
     images: [
@@ -457,12 +710,22 @@ export const mockProducts: Product[] = [
     sku: 'SE-001-ABT',
     shortDescription: 'Dramatic edge design with shadow play.',
     isOnlineOnly: true,
+    description: 'The Shadow Edge is designed to cast dramatic shadows. Its angular form transforms throughout the day as light changes.',
+    keyBenefits: [
+      'Dynamic shadow casting',
+      'Changes with light',
+      'Online exclusive',
+    ],
+    technicalSpecs: {
+      'Dimensions': '5" × 5" × 7"',
+      'Material': 'Matte composite',
+    },
   },
   // Polished Fold
   {
     id: 'polished-fold',
     name: 'Polished Fold',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 72.00,
     sku: 'PF-001-ABT',
     shortDescription: 'Refined folded form with polished finish.',
@@ -481,12 +744,23 @@ export const mockProducts: Product[] = [
     rating: 4.8,
     reviewCount: 52,
     isNew: true,
+    description: 'The Polished Fold mimics a sheet of metal frozen mid-fold. Its reflective surfaces create ever-changing highlights.',
+    keyBenefits: [
+      'Reflective polished finish',
+      'Dynamic light play',
+      'Sculptural elegance',
+    ],
+    technicalSpecs: {
+      'Dimensions': '7" × 5" × 4"',
+      'Finish': 'High-polish',
+      'Material': 'Premium composite',
+    },
   },
   // Fusion Block
   {
     id: 'fusion-block',
     name: 'Fusion Block',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 95.00,
     image: '/images/products/fusion-block-1.png',
     images: [
@@ -506,12 +780,32 @@ export const mockProducts: Product[] = [
     sku: 'FB-001-SET',
     shortDescription: 'Modular block system with versatile arrangement.',
     isBestSeller: true,
+    description: 'The Fusion Block is our innovative modular system. Multiple interlocking pieces can be arranged and rearranged to create countless configurations.',
+    keyBenefits: [
+      'Modular interlocking system',
+      'Infinite configurations',
+      'Expandable collection',
+    ],
+    usageInstructions: [
+      'Follow included guide for base configs',
+      'Experiment with arrangements',
+      'Combine multiple sets',
+    ],
+    technicalSpecs: {
+      'Includes': '5 interlocking pieces',
+      'Assembled Range': '6" to 12"',
+      'Weight': '3.5 lbs',
+      'Material': 'Engineered polymer',
+    },
+    deliveryEstimate: '3-5 business days',
+    returnsPolicy: '30-day hassle-free returns',
+    warranty: '2-year warranty',
   },
   // Fusion Prism - White
   {
     id: 'fusion-prism-white',
     name: 'Fusion Prism',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 88.00,
     sku: 'FP-001-WHT',
     shortDescription: 'Fused prismatic form with modern geometry.',
@@ -530,12 +824,23 @@ export const mockProducts: Product[] = [
     stockQuantity: 19,
     rating: 4.7,
     reviewCount: 43,
+    description: 'The Fusion Prism combines multiple angular faces into a unified form. Light refracts across its surfaces creating subtle visual complexity.',
+    keyBenefits: [
+      'Multi-faceted design',
+      'Light-refracting surfaces',
+      'Statement piece',
+    ],
+    technicalSpecs: {
+      'Dimensions': '8" × 6" × 10"',
+      'Material': 'Premium composite',
+      'Finish': 'Semi-gloss white',
+    },
   },
   // Fusion Prism - Charcoal
   {
     id: 'fusion-prism-charcoal',
     name: 'Fusion Prism',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 88.00,
     image: '/images/products/fusion-prism-charcoal-1.png',
     images: [
@@ -555,12 +860,18 @@ export const mockProducts: Product[] = [
     sku: 'FP-002-CHR',
     shortDescription: 'Fused prismatic form with modern geometry.',
     isNew: true,
+    description: 'The Fusion Prism in charcoal offers a more dramatic interpretation. Deep tones add weight and presence.',
+    keyBenefits: [
+      'Dramatic charcoal finish',
+      'Multi-faceted design',
+      'Bold presence',
+    ],
   },
   // Unity Sphere
   {
     id: 'unity-sphere',
     name: 'Unity Sphere',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 68.00,
     originalPrice: 85.00,
     sku: 'US-001-GLD',
@@ -580,12 +891,24 @@ export const mockProducts: Product[] = [
     stockQuantity: 28,
     rating: 4.6,
     reviewCount: 98,
+    description: 'The Unity Sphere represents wholeness and harmony. Available in four sizes for perfect proportional groupings.',
+    keyBenefits: [
+      'Four sizes available',
+      'Perfect for groupings',
+      'Warm golden undertone',
+    ],
+    technicalSpecs: {
+      'Small': '3" diameter',
+      'Medium': '4" diameter',
+      'Large': '5" diameter',
+      'XL': '6" diameter',
+    },
   },
   // Base Module
   {
     id: 'base-module',
     name: 'Base Module',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 45.00,
     sku: 'BM-001-MOD',
     shortDescription: 'Foundation module for modular systems.',
@@ -604,12 +927,23 @@ export const mockProducts: Product[] = [
     storeAvailable: true,
     rating: 4.5,
     reviewCount: 76,
+    description: 'The Base Module is the foundation of our modular system. Start here and build upward with compatible pieces.',
+    keyBenefits: [
+      'Foundation for modular builds',
+      'Universal compatibility',
+      'Three sizes available',
+    ],
+    technicalSpecs: {
+      'Small': '4" × 4" × 2"',
+      'Medium': '5" × 5" × 2.5"',
+      'Large': '6" × 6" × 3"',
+    },
   },
   // Core Assembly
   {
     id: 'core-assembly',
     name: 'Core Assembly',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 125.00,
     image: '/images/products/core-assembly-1.png',
     images: [
@@ -627,12 +961,32 @@ export const mockProducts: Product[] = [
     sku: 'CA-001-MOD',
     shortDescription: 'Complex assembly with interlocking components.',
     isLimitedEdition: true,
+    description: 'Our most sophisticated modular creation. Precision-engineered components interlock to create complex three-dimensional sculpture.',
+    keyBenefits: [
+      'Interactive assembly',
+      'Precision components',
+      'Collector\'s item',
+    ],
+    usageInstructions: [
+      'Follow assembly guide',
+      'Experiment with arrangements',
+      'Document your builds',
+    ],
+    technicalSpecs: {
+      'Medium': '7" × 7" × 9"',
+      'Large': '9" × 9" × 12"',
+      'Parts': '12 components',
+      'Material': 'Aluminum and composite',
+    },
+    deliveryEstimate: '5-7 business days',
+    returnsPolicy: '30-day returns',
+    warranty: 'Lifetime warranty',
   },
   // Compact Layer
   {
     id: 'compact-layer',
     name: 'Compact Layer',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 55.00,
     sku: 'CL-001-MOD',
     shortDescription: 'Streamlined layered design with compact profile.',
@@ -649,12 +1003,22 @@ export const mockProducts: Product[] = [
     stockQuantity: 33,
     rating: 4.4,
     reviewCount: 42,
+    description: 'The Compact Layer offers horizontal emphasis in a slim profile. Perfect for console tables and narrow surfaces.',
+    keyBenefits: [
+      'Slim horizontal profile',
+      'Great for narrow spaces',
+      'Stackable design',
+    ],
+    technicalSpecs: {
+      'Profile Height': '1.5"',
+      'Width Range': '6" to 10"',
+    },
   },
   // Twin Towers - Small
   {
     id: 'twin-towers-small',
     name: 'Twin Towers',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 75.00,
     image: '/images/products/twin-towers-small-1.png',
     images: [
@@ -673,12 +1037,18 @@ export const mockProducts: Product[] = [
     reviewCount: 28,
     sku: 'TT-001-SML',
     shortDescription: 'Bold vertical statement pieces in matching pair.',
+    description: 'The Twin Towers create bold vertical presence. Two matching forms that command attention together.',
+    keyBenefits: [
+      'Matched pair design',
+      'Vertical emphasis',
+      'Desk-friendly size',
+    ],
   },
   // Twin Towers - Medium
   {
     id: 'twin-towers-medium',
     name: 'Twin Towers',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 95.00,
     sku: 'TT-002-MED',
     shortDescription: 'Bold vertical statement pieces in matching pair.',
@@ -698,12 +1068,18 @@ export const mockProducts: Product[] = [
     rating: 4.8,
     reviewCount: 45,
     isBestSeller: true,
+    description: 'Medium Twin Towers offer the perfect balance of presence and proportion. Most popular size for living spaces.',
+    keyBenefits: [
+      'Most popular size',
+      'Perfect proportions',
+      'Living room scale',
+    ],
   },
   // Twin Towers - Large
   {
     id: 'twin-towers-large',
     name: 'Twin Towers',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 125.00,
     originalPrice: 145.00,
     sku: 'TT-002-LRG',
@@ -724,12 +1100,18 @@ export const mockProducts: Product[] = [
     stockQuantity: 12,
     rating: 4.9,
     reviewCount: 67,
+    description: 'Large Twin Towers make a dramatic statement. Perfect for flanking furniture or creating architectural moments.',
+    keyBenefits: [
+      'Maximum visual impact',
+      'Architectural scale',
+      'Floor or furniture display',
+    ],
   },
   // Sky Column
   {
     id: 'sky-column',
     name: 'Sky Column',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 110.00,
     image: '/images/products/sky-column-1.png',
     images: [
@@ -746,12 +1128,23 @@ export const mockProducts: Product[] = [
     sku: 'SK-001-GEO',
     shortDescription: 'Tall vertical column reaching skyward.',
     isNew: true,
+    description: 'The Sky Column draws the eye upward with its elegant height. A study in vertical proportion and aspiration.',
+    keyBenefits: [
+      'Dramatic height',
+      'Slender profile',
+      'Floor or table display',
+    ],
+    technicalSpecs: {
+      'Medium': '3" × 3" × 12"',
+      'Large': '4" × 4" × 18"',
+      'XL': '5" × 5" × 24"',
+    },
   },
   // Layer One
   {
     id: 'layer-one',
     name: 'Layer One',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 38.00,
     sku: 'L1-001-MOD',
     shortDescription: 'First layer in modular stacking system.',
@@ -767,12 +1160,18 @@ export const mockProducts: Product[] = [
     stockQuantity: 50,
     rating: 4.3,
     reviewCount: 54,
+    description: 'Layer One begins your modular journey. The first tier of our stackable layer system.',
+    keyBenefits: [
+      'Entry point for layers',
+      'Stackable design',
+      'Affordable start',
+    ],
   },
   // Layer Two
   {
     id: 'layer-two',
     name: 'Layer Two',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 42.00,
     image: '/images/products/layer-two-1.png',
     images: [
@@ -788,12 +1187,18 @@ export const mockProducts: Product[] = [
     reviewCount: 39,
     sku: 'L2-001-MOD',
     shortDescription: 'Second layer in modular stacking system.',
+    description: 'Layer Two continues the journey. Designed to stack perfectly on Layer One for graduated compositions.',
+    keyBenefits: [
+      'Stacks on Layer One',
+      'Graduated proportions',
+      'Expand your system',
+    ],
   },
   // Layer Grid
   {
     id: 'layer-grid',
     name: 'Layer Grid',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 65.00,
     sku: 'LG-001-MOD',
     shortDescription: 'Grid-based layered structure for modular design.',
@@ -809,12 +1214,22 @@ export const mockProducts: Product[] = [
     stockQuantity: 25,
     rating: 4.7,
     reviewCount: 31,
+    description: 'The Layer Grid introduces pattern to the modular system. Its geometric grid creates rhythm and visual interest.',
+    keyBenefits: [
+      'Geometric grid pattern',
+      'Visual rhythm',
+      'Works with all layers',
+    ],
+    technicalSpecs: {
+      'Grid Pattern': '3×3 or 4×4',
+      'Compatible': 'All Layer products',
+    },
   },
   // Signature Form - White
   {
     id: 'signature-form-white',
     name: 'Signature Form',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 150.00,
     image: '/images/products/signature-form-white-1.png',
     images: [
@@ -835,12 +1250,42 @@ export const mockProducts: Product[] = [
     sku: 'SF-001-WHT',
     shortDescription: 'Premium signature design with sophisticated elegance.',
     isLimitedEdition: true,
+    description: 'The Signature Form represents the pinnacle of our design philosophy. Limited edition, individually numbered, with certificate of authenticity.',
+    keyBenefits: [
+      'Limited edition numbered',
+      'Hand-finished by artisans',
+      'Certificate included',
+    ],
+    ingredients: [
+      'Premium-grade composite',
+      'Nano-ceramic coating',
+      'Archival-quality finish',
+    ],
+    usageInstructions: [
+      'Position as focal point',
+      'Allow space around piece',
+      'Consider accent lighting',
+    ],
+    careInstructions: [
+      'Handle with clean, dry hands',
+      'Use provided microfiber cloth',
+      'Avoid direct sunlight',
+    ],
+    technicalSpecs: {
+      'Medium': '8" × 6" × 10"',
+      'Large': '10" × 8" × 12"',
+      'XL': '14" × 10" × 16"',
+      'Edition': 'Limited to 500 per color',
+    },
+    deliveryEstimate: '5-7 business days',
+    returnsPolicy: '14-day returns',
+    warranty: 'Lifetime warranty',
   },
   // Signature Form - Silver
   {
     id: 'signature-form-silver',
     name: 'Signature Form',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 165.00,
     sku: 'SF-002-SLV',
     shortDescription: 'Premium signature design with sophisticated elegance.',
@@ -859,12 +1304,18 @@ export const mockProducts: Product[] = [
     rating: 4.9,
     reviewCount: 56,
     isLimitedEdition: true,
+    description: 'The Signature Form in silver adds luminous elegance. Its metallic sheen catches and reflects ambient light beautifully.',
+    keyBenefits: [
+      'Metallic silver finish',
+      'Light-catching design',
+      'Limited edition',
+    ],
   },
   // Signature Form - Black
   {
     id: 'signature-form-black',
     name: 'Signature Form',
-    brand: 'Market Street',
+    brand: 'Salesforce Foundations',
     price: 150.00,
     originalPrice: 180.00,
     sku: 'SF-003-BLK',
@@ -885,6 +1336,12 @@ export const mockProducts: Product[] = [
     stockQuantity: 0,
     rating: 4.8,
     reviewCount: 72,
+    description: 'The Signature Form in black offers the most dramatic presence. Deep, light-absorbing finish creates powerful negative space.',
+    keyBenefits: [
+      'Dramatic black finish',
+      'Light-absorbing depth',
+      'Powerful presence',
+    ],
   },
 ]
 

@@ -31,7 +31,7 @@ export default function TermsPage() {
           {/* Introduction */}
           <section className="mb-16 md:mb-24">
             <p className="text-body-lg text-brand-gray-700 leading-relaxed mb-6">
-              Welcome to Market Street. These Terms of Use govern your access to and use of our website, products, and services. By accessing or using our website, you agree to be bound by these terms and conditions.
+              Welcome to Salesforce Foundations. These Terms of Use govern your access to and use of our website, products, and services. By accessing or using our website, you agree to be bound by these terms and conditions.
             </p>
             <p className="text-body-lg text-brand-gray-700 leading-relaxed">
               Please read these terms carefully. If you do not agree with any part of these terms, you may not access or use our services.
@@ -135,7 +135,7 @@ export default function TermsPage() {
               Intellectual Property
             </h2>
             <p className="text-body-lg text-brand-gray-700 leading-relaxed mb-4">
-              All content on this website, including but not limited to text, graphics, logos, images, audio clips, digital downloads, and software, is the property of Market Street or its content suppliers and is protected by copyright, trademark, and other intellectual property laws.
+              All content on this website, including but not limited to text, graphics, logos, images, audio clips, digital downloads, and software, is the property of Salesforce Foundations or its content suppliers and is protected by copyright, trademark, and other intellectual property laws.
             </p>
             <p className="text-body-lg text-brand-gray-700 leading-relaxed">
               You may not reproduce, distribute, modify, create derivative works of, publicly display, publicly perform, republish, download, store, or transmit any of the material on our website without our prior written consent, except as necessary to view the content for your personal, non-commercial use.
@@ -148,7 +148,7 @@ export default function TermsPage() {
               Limitation of Liability
             </h2>
             <p className="text-body-lg text-brand-gray-700 leading-relaxed mb-4">
-              To the fullest extent permitted by law, Market Street shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or revenues, whether incurred directly or indirectly, or any loss of data, use, goodwill, or other intangible losses resulting from your use of our website or services.
+              To the fullest extent permitted by law, Salesforce Foundations shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or revenues, whether incurred directly or indirectly, or any loss of data, use, goodwill, or other intangible losses resulting from your use of our website or services.
             </p>
             <p className="text-body-lg text-brand-gray-700 leading-relaxed">
               Our total liability to you for all claims arising from or related to the use of our website or services shall not exceed the amount you paid to us in the twelve months preceding the claim.
@@ -161,7 +161,7 @@ export default function TermsPage() {
               Indemnification
             </h2>
             <p className="text-body-lg text-brand-gray-700 leading-relaxed">
-              You agree to indemnify, defend, and hold harmless Market Street, its officers, directors, employees, agents, and affiliates from and against any and all claims, damages, obligations, losses, liabilities, costs, or debt, and expenses (including attorney&apos;s fees) arising from your use of the website, violation of these Terms of Use, or violation of any third-party rights.
+              You agree to indemnify, defend, and hold harmless Salesforce Foundations, its officers, directors, employees, agents, and affiliates from and against any and all claims, damages, obligations, losses, liabilities, costs, or debt, and expenses (including attorney&apos;s fees) arising from your use of the website, violation of these Terms of Use, or violation of any third-party rights.
             </p>
           </section>
 

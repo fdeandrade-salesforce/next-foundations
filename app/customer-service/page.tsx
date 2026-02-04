@@ -32,7 +32,7 @@ export default function CustomerServicePage() {
           {/* Introduction */}
           <section className="mb-16 md:mb-24">
             <p className="text-body-lg text-brand-gray-700 leading-relaxed mb-6">
-              At Market Street, exceptional customer service is at the heart of everything we do. We&apos;re here to help you with any questions, concerns, or support you need. Our team is committed to providing you with a seamless and enjoyable experience.
+              At Salesforce Foundations, exceptional customer service is at the heart of everything we do. We&apos;re here to help you with any questions, concerns, or support you need. Our team is committed to providing you with a seamless and enjoyable experience.
             </p>
             <p className="text-body-lg text-brand-gray-700 leading-relaxed">
               Whether you need help with an order, have questions about our products, or want to provide feedback, we&apos;re ready to assist you.

@@ -17,7 +17,7 @@ export default function Footer() {
       'Contact Us',
     ],
     'About': [
-      'About Market Street',
+      'About Salesforce Foundations',
       'Careers',
       'Sustainability',
       'Press',
@@ -36,7 +36,7 @@ export default function Footer() {
               <ul className="space-y-2">
                 {links.map((link) => {
                   let href = '#'
-                  if (link === 'About Market Street') {
+                  if (link === 'About Salesforce Foundations') {
                     href = '/about'
                   } else if (link === 'Women') {
                     href = '/women'
@@ -98,7 +98,7 @@ export default function Footer() {
                 <div className="flex items-center gap-2">
                   <img 
                     src="/images/logo.svg" 
-                    alt="Market Street" 
+                    alt="Salesforce Foundations" 
                     className="h-8 w-auto"
                   />
                 </div>
@@ -135,7 +135,7 @@ export default function Footer() {
             {/* Bottom row: Address and legal links */}
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-brand-gray-600">
               <div>
-                © Market Street 1818 Cornwall Ave, Vancouver BC V5J 1C7
+                © Salesforce Foundations 1818 Cornwall Ave, Vancouver BC V5J 1C7
               </div>
               <div className="flex items-center gap-4">
                 <a href="/privacy" className="hover:text-brand-black transition-colors flex items-center gap-1">

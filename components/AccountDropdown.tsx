@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { getCurrentUser, User } from '../lib/auth'
 
 interface AccountDropdownProps {
@@ -9,6 +10,7 @@ interface AccountDropdownProps {
 }
 
 export default function AccountDropdown({ onOpenLogin, onLogout }: AccountDropdownProps) {
+  const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
   const [user, setUser] = useState<User | null>(null)
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -44,16 +46,22 @@ export default function AccountDropdown({ onOpenLogin, onLogout }: AccountDropdo
   }, [])
 
   const handleMouseEnter = () => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current)
+    // Only enable hover on desktop (md and up)
+    if (window.innerWidth >= 768) {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+      setIsOpen(true)
     }
-    setIsOpen(true)
   }
 
   const handleMouseLeave = () => {
-    timeoutRef.current = setTimeout(() => {
-      setIsOpen(false)
-    }, 150)
+    // Only enable hover on desktop (md and up)
+    if (window.innerWidth >= 768) {
+      timeoutRef.current = setTimeout(() => {
+        setIsOpen(false)
+      }, 150)
+    }
   }
 
   const handleSignInClick = () => {
@@ -64,6 +72,18 @@ export default function AccountDropdown({ onOpenLogin, onLogout }: AccountDropdo
   const handleLogoutClick = () => {
     setIsOpen(false)
     onLogout()
+  }
+
+  const handleAccountClick = () => {
+    if (user) {
+      // If user is logged in, navigate to account page
+      setIsOpen(false)
+      router.push('/account')
+    } else {
+      // If user is not logged in, open login modal
+      setIsOpen(false)
+      onOpenLogin()
+    }
   }
 
   const getInitials = (firstName: string, lastName: string): string => {
@@ -179,7 +199,9 @@ export default function AccountDropdown({ onOpenLogin, onLogout }: AccountDropdo
     >
       {/* Account Button */}
       <button
-        className="p-2 text-brand-black hover:text-brand-gray-600 transition-colors"
+        onClick={handleAccountClick}
+        onMouseEnter={user ? handleMouseEnter : undefined}
+        className="p-2 text-brand-black hover:text-brand-gray-600 md:hover:text-brand-gray-600 transition-colors"
         aria-label="Account"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -187,8 +209,8 @@ export default function AccountDropdown({ onOpenLogin, onLogout }: AccountDropdo
         </svg>
       </button>
 
-      {/* Dropdown Menu */}
-      {isOpen && (
+      {/* Dropdown Menu - Only show when user is logged in */}
+      {isOpen && user && (
         <div 
           className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-xl border border-brand-gray-200 overflow-hidden z-50"
           style={{

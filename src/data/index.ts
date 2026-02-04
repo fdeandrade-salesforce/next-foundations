@@ -8,7 +8,8 @@
  *   import { getRepositories, productRepo, orderRepo } from '@/src/data'
  * 
  * Environment Variable:
- *   DATA_PROVIDER=mock|supabase (default: mock)
+ *   NEXT_PUBLIC_DATA_PROVIDER=mock|supabase (default: mock)
+ *   Also supports DATA_PROVIDER for backward compatibility
  */
 
 import { IDataRepositories } from './repositories/types'
@@ -23,15 +24,66 @@ type DataProvider = 'mock' | 'supabase'
 
 /**
  * Get the current data provider from environment
+ * Prioritizes NEXT_PUBLIC_DATA_PROVIDER for client components
  */
 function getDataProvider(): DataProvider {
-  const provider = process.env.DATA_PROVIDER || process.env.NEXT_PUBLIC_DATA_PROVIDER || 'mock'
+  // Prioritize NEXT_PUBLIC_* for client-side access
+  const provider = (process.env.NEXT_PUBLIC_DATA_PROVIDER || process.env.DATA_PROVIDER || 'mock').toLowerCase()
   
   if (provider === 'supabase') {
     return 'supabase'
   }
   
   return 'mock'
+}
+
+/**
+ * Extract Supabase project reference from URL (safe for logging)
+ * Example: https://xxxxx.supabase.co -> xxxxx
+ * Also handles .supabase.in domains
+ */
+function extractSupabaseProjectRef(url: string | undefined): string | null {
+  if (!url) return null
+  try {
+    // Match both .supabase.co and .supabase.in domains
+    const match = url.match(/https?:\/\/([^.]+)\.supabase\.(co|in)/)
+    return match ? match[1] : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Validate Supabase credentials and throw immediately if missing
+ */
+function validateSupabaseCredentials(): void {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error(
+      'NEXT_PUBLIC_DATA_PROVIDER=supabase requires Supabase environment variables.\n\n' +
+      'Please set:\n' +
+      '  - NEXT_PUBLIC_SUPABASE_URL\n' +
+      '  - NEXT_PUBLIC_SUPABASE_ANON_KEY\n\n' +
+      'You can find these in your Supabase project settings under API.\n' +
+      'Or set NEXT_PUBLIC_DATA_PROVIDER=mock to use mock data instead.'
+    )
+  }
+  
+  // Validate URL format
+  if (!supabaseUrl.includes('.supabase.co') && !supabaseUrl.includes('.supabase.in')) {
+    throw new Error(
+      'Invalid NEXT_PUBLIC_SUPABASE_URL format. Expected format: https://xxxxx.supabase.co'
+    )
+  }
+  
+  // Validate key format (should start with eyJ for JWT)
+  if (!supabaseAnonKey.startsWith('eyJ')) {
+    throw new Error(
+      'Invalid NEXT_PUBLIC_SUPABASE_ANON_KEY format. Expected a JWT token starting with "eyJ"'
+    )
+  }
 }
 
 // ============================================================================
@@ -50,27 +102,30 @@ export function getRepositories(): IDataRepositories {
     
     switch (provider) {
       case 'supabase':
-        // Validate Supabase env vars before creating repositories
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-        const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+        // Validate immediately - no fallback to mock
+        validateSupabaseCredentials()
         
-        if (!supabaseUrl || !supabaseAnonKey) {
-          throw new Error(
-            'DATA_PROVIDER=supabase requires Supabase environment variables.\n\n' +
-            'Please set:\n' +
-            '  - NEXT_PUBLIC_SUPABASE_URL\n' +
-            '  - NEXT_PUBLIC_SUPABASE_ANON_KEY\n\n' +
-            'You can find these in your Supabase project settings under API.\n' +
-            'Or set DATA_PROVIDER=mock to use mock data instead.'
-          )
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+        const projectRef = extractSupabaseProjectRef(supabaseUrl)
+        
+        // Dev-only startup log
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Data Layer] ✅ Using Supabase provider')
+          if (projectRef) {
+            console.log(`[Data Layer] 📦 Supabase project: ${projectRef}`)
+          } else {
+            console.log(`[Data Layer] 📦 Supabase URL: ${supabaseUrl}`)
+          }
         }
         
-        console.log('[Data Layer] Using Supabase provider')
         _repositories = createSupabaseRepositories()
         break
       case 'mock':
       default:
-        console.log('[Data Layer] Using Mock provider')
+        // Dev-only startup log
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Data Layer] ✅ Using Mock provider')
+        }
         _repositories = createMockRepositories()
         break
     }

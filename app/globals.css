@@ -2,18 +2,204 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================================
+   DESIGN TOKENS - CSS Custom Properties
+   Following Salesforce Foundations pattern with semantic tokens
+   ============================================================================ */
+
 @layer base {
   :root {
-    --foreground-rgb: 0, 0, 0;
-    --background-rgb: 255, 255, 255;
+    /* -- Border Radius Tokens -- */
+    --radius: 0.5rem;
+    --radius-sm: 0.25rem;
+    --radius-md: 0.375rem;
+    --radius-lg: 0.5rem;
+    --radius-xl: 0.75rem;
+    --radius-2xl: 1rem;
+    --radius-3xl: 1.5rem;
+    --radius-full: 9999px;
+    --radius-button: var(--radius-lg);
+    --radius-card: var(--radius-xl);
+    --radius-modal: var(--radius-2xl);
+    --radius-badge: var(--radius-md);
+    --radius-input: var(--radius-lg);
+
+    /* -- Core Semantic Colors -- */
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.13 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.13 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.13 0 0);
+    --primary: oklch(0.59 0.2 264);
+    --primary-foreground: oklch(1 0 0);
+    --secondary: oklch(0.96 0 0);
+    --secondary-foreground: oklch(0.13 0 0);
+    --muted: oklch(0.96 0 0);
+    --muted-foreground: oklch(0.45 0 0);
+    --accent: oklch(0.96 0 0);
+    --accent-foreground: oklch(0.13 0 0);
+    --destructive: oklch(0.55 0.22 27);
+    --destructive-foreground: oklch(1 0 0);
+    --border: oklch(0.91 0 0);
+    --input: oklch(0.91 0 0);
+    --ring: oklch(0.59 0.2 264);
+
+    /* -- Status Colors -- */
+    --success: oklch(0.55 0.16 145);
+    --success-foreground: oklch(1 0 0);
+    --success-light: oklch(0.94 0.04 145);
+    --warning: oklch(0.75 0.15 85);
+    --warning-foreground: oklch(0.25 0 0);
+    --warning-light: oklch(0.96 0.04 85);
+    --info: oklch(0.59 0.2 264);
+    --info-foreground: oklch(1 0 0);
+    --info-light: oklch(0.95 0.03 264);
+    --error: oklch(0.55 0.22 27);
+    --error-foreground: oklch(1 0 0);
+    --error-light: oklch(0.95 0.04 27);
+
+    /* -- Brand Blue Palette -- */
+    --brand-blue-50: oklch(0.97 0.02 264);
+    --brand-blue-100: oklch(0.93 0.04 264);
+    --brand-blue-200: oklch(0.88 0.08 264);
+    --brand-blue-300: oklch(0.78 0.12 264);
+    --brand-blue-400: oklch(0.68 0.16 264);
+    --brand-blue-500: oklch(0.59 0.2 264);
+    --brand-blue-600: oklch(0.52 0.2 264);
+    --brand-blue-700: oklch(0.46 0.18 264);
+    --brand-blue-800: oklch(0.42 0.16 264);
+    --brand-blue-900: oklch(0.38 0.14 264);
+
+    /* -- Brand Gray Palette -- */
+    --brand-gray-50: oklch(0.98 0 0);
+    --brand-gray-100: oklch(0.96 0 0);
+    --brand-gray-200: oklch(0.93 0 0);
+    --brand-gray-300: oklch(0.88 0 0);
+    --brand-gray-400: oklch(0.74 0 0);
+    --brand-gray-500: oklch(0.62 0 0);
+    --brand-gray-600: oklch(0.46 0 0);
+    --brand-gray-700: oklch(0.38 0 0);
+    --brand-gray-800: oklch(0.26 0 0);
+    --brand-gray-900: oklch(0.13 0 0);
+
+    /* -- Brand Core Colors -- */
+    --brand-black: oklch(0 0 0);
+    --brand-white: oklch(1 0 0);
+
+    /* -- Payment Brand Colors -- */
+    --payment-paypal-blue: oklch(0.52 0.12 250);
+    --payment-paypal-yellow: oklch(0.87 0.15 90);
+    --payment-paypal-dark: oklch(0.35 0.1 250);
+    --payment-venmo-blue: oklch(0.55 0.18 250);
+    --payment-visa-blue: oklch(0.35 0.15 265);
+    --payment-mastercard-red: oklch(0.55 0.22 27);
+    --payment-mastercard-orange: oklch(0.75 0.18 65);
+    --payment-amex-blue: oklch(0.45 0.12 250);
+    --payment-amazon-gray: oklch(0.95 0 0);
+    --payment-applepay-black: oklch(0 0 0);
+    --payment-googlepay-gray: oklch(0.96 0 0);
+
+    /* -- Star Rating Colors -- */
+    --star-filled: oklch(0.80 0.16 85);
+    --star-empty: oklch(0.88 0 0);
+
+    /* -- Product Badge Colors -- */
+    --badge-new: oklch(0.55 0.16 145);
+    --badge-new-foreground: oklch(1 0 0);
+    --badge-bestseller: oklch(0.59 0.2 264);
+    --badge-bestseller-foreground: oklch(1 0 0);
+    --badge-online-only: oklch(0.55 0.2 300);
+    --badge-online-only-foreground: oklch(1 0 0);
+    --badge-limited: oklch(0.65 0.18 50);
+    --badge-limited-foreground: oklch(1 0 0);
+    --badge-sale: oklch(0.59 0.2 264);
+    --badge-sale-foreground: oklch(1 0 0);
+    --badge-out-of-stock: oklch(0.55 0.22 27);
+    --badge-out-of-stock-foreground: oklch(1 0 0);
+
+    /* -- Loyalty Badge Colors -- */
+    --loyalty-platinum: oklch(0.55 0.2 300);
+    --loyalty-platinum-light: oklch(0.94 0.04 300);
+    --loyalty-gold: oklch(0.75 0.15 85);
+    --loyalty-gold-light: oklch(0.96 0.04 85);
+    --loyalty-silver: oklch(0.62 0 0);
+    --loyalty-silver-light: oklch(0.96 0 0);
+    --loyalty-bronze: oklch(0.65 0.18 50);
+    --loyalty-bronze-light: oklch(0.96 0.04 50);
+
+    /* -- Shadow Tokens -- */
+    --shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 5%);
+    --shadow-sm: 0 1px 3px 0 oklch(0 0 0 / 10%), 0 1px 2px -1px oklch(0 0 0 / 10%);
+    --shadow-md: 0 4px 6px -1px oklch(0 0 0 / 10%), 0 2px 4px -2px oklch(0 0 0 / 10%);
+    --shadow-lg: 0 10px 15px -3px oklch(0 0 0 / 10%), 0 4px 6px -4px oklch(0 0 0 / 10%);
+    --shadow-xl: 0 20px 25px -5px oklch(0 0 0 / 10%), 0 8px 10px -6px oklch(0 0 0 / 10%);
+    --shadow-2xl: 0 25px 50px -12px oklch(0 0 0 / 25%);
+    --shadow-card: var(--shadow-sm);
+    --shadow-card-hover: var(--shadow-lg);
+    --shadow-dropdown: var(--shadow-lg);
+    --shadow-modal: var(--shadow-xl);
+    --shadow-button: var(--shadow-sm);
+
+    /* -- Z-Index Scale -- */
+    --z-dropdown: 50;
+    --z-sticky: 100;
+    --z-fixed: 200;
+    --z-modal-backdrop: 400;
+    --z-modal: 500;
+    --z-popover: 600;
+    --z-tooltip: 700;
+    --z-toast: 800;
+
+    /* -- Opacity Tokens -- */
+    --opacity-backdrop: 0.5;
+    --opacity-backdrop-heavy: 0.7;
+    --opacity-backdrop-light: 0.4;
+    --opacity-disabled: 0.5;
+    --opacity-hover: 0.8;
+    --opacity-muted: 0.6;
+
+    /* -- Transition/Duration Tokens -- */
+    --duration-fast: 150ms;
+    --duration-normal: 200ms;
+    --duration-slow: 300ms;
+    --duration-slower: 500ms;
+    --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-in: cubic-bezier(0.4, 0, 1, 1);
+    --ease-out: cubic-bezier(0, 0, 0.2, 1);
+    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* -- Component Spacing Tokens -- */
+    --spacing-modal-padding: 1rem;
+    --spacing-card-padding: 1rem;
+    --spacing-section-gap: 2rem;
+    --spacing-input-x: 1rem;
+    --spacing-input-y: 0.75rem;
+    --spacing-button-x: 1.5rem;
+    --spacing-button-y: 0.75rem;
+  }
+
+  /* Responsive spacing adjustments */
+  @media (min-width: 640px) {
+    :root {
+      --spacing-modal-padding: 1.5rem;
+      --spacing-section-gap: 3rem;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    :root {
+      --spacing-modal-padding: 2rem;
+      --spacing-section-gap: 4rem;
+    }
   }
 
   * {
-    @apply border-brand-gray-200;
+    @apply border-border;
   }
 
   body {
-    @apply bg-white text-brand-black antialiased;
+    @apply bg-background text-foreground antialiased;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
       'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
     -webkit-font-smoothing: antialiased;
@@ -26,60 +212,222 @@
 }
 
 @layer components {
-  /* Button Variants - Blue Accent Design with Rounded Corners */
+  /* ============================================================================
+     BUTTON COMPONENTS
+     ============================================================================ */
   .btn {
-    @apply px-6 py-3 font-medium text-sm transition-all duration-300 rounded-lg;
+    @apply px-6 py-3 font-medium text-sm transition-all rounded-[var(--radius-button)];
+    transition-duration: var(--duration-slow);
     @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
   }
 
   .btn-primary {
-    @apply bg-brand-blue-500 text-white hover:bg-brand-blue-600 focus:ring-brand-blue-500 rounded-lg shadow-sm;
+    @apply bg-primary text-primary-foreground hover:opacity-90 focus:ring-primary rounded-[var(--radius-button)];
+    box-shadow: var(--shadow-button);
   }
 
   .btn-secondary {
-    @apply bg-white text-brand-black border border-brand-gray-300 hover:bg-brand-gray-50 focus:ring-brand-blue-500 rounded-lg shadow-sm;
+    @apply bg-background text-foreground border border-border hover:bg-secondary focus:ring-primary rounded-[var(--radius-button)];
+    box-shadow: var(--shadow-button);
   }
 
   .btn-ghost {
-    @apply bg-transparent text-brand-black hover:bg-brand-gray-100 focus:ring-brand-blue-500 rounded-lg;
+    @apply bg-transparent text-foreground hover:bg-secondary focus:ring-primary rounded-[var(--radius-button)];
   }
 
   .btn-outline {
-    @apply bg-transparent text-brand-blue-500 border border-brand-blue-500 hover:bg-brand-blue-50 focus:ring-brand-blue-500 rounded-lg shadow-sm;
+    @apply bg-transparent text-primary border border-primary focus:ring-primary rounded-[var(--radius-button)];
+    box-shadow: var(--shadow-button);
+  }
+  .btn-outline:hover {
+    background-color: oklch(0.59 0.2 264 / 5%);
   }
 
-  /* Product Card Component */
+  /* ============================================================================
+     PRODUCT CARD COMPONENTS
+     ============================================================================ */
   .product-card {
-    @apply bg-white cursor-pointer transition-all duration-300 rounded-lg overflow-hidden;
+    @apply bg-card cursor-pointer transition-all rounded-[var(--radius-card)] overflow-hidden;
+    transition-duration: var(--duration-slow);
+    box-shadow: var(--shadow-card);
   }
 
   .product-card:hover {
-    @apply shadow-lg;
+    box-shadow: var(--shadow-card-hover);
   }
 
   .product-image {
-    @apply w-full aspect-[3/4] bg-brand-gray-100 overflow-hidden relative rounded-lg;
+    @apply w-full aspect-[3/4] bg-muted overflow-hidden relative rounded-[var(--radius-card)];
   }
 
   .product-image img {
-    @apply w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 rounded-lg;
+    @apply w-full h-full object-cover transition-transform rounded-[var(--radius-card)];
+    transition-duration: var(--duration-slower);
   }
 
-  /* Navigation Component */
+  .product-card:hover .product-image img {
+    @apply scale-105;
+  }
+
+  /* ============================================================================
+     NAVIGATION COMPONENTS
+     ============================================================================ */
   .nav-link {
-    @apply text-sm font-medium text-brand-black hover:text-brand-gray-600 transition-colors duration-200;
+    @apply text-sm font-medium text-foreground transition-colors;
+    transition-duration: var(--duration-normal);
+  }
+
+  .nav-link:hover {
+    @apply text-muted-foreground;
   }
 
   .nav-link-active {
-    @apply text-brand-black border-b-2 border-brand-blue-500;
+    @apply text-foreground border-b-2 border-primary;
   }
 
-  /* Announcement Bar */
+  /* ============================================================================
+     ANNOUNCEMENT BAR
+     ============================================================================ */
   .announcement-bar {
-    @apply bg-brand-blue-100 text-brand-blue-900 text-sm py-2 px-4;
+    @apply text-sm py-2 px-4;
+    background-color: var(--brand-blue-100);
+    color: var(--brand-blue-900);
   }
 
-  /* Quantity Input - Hide spinner controls */
+  /* ============================================================================
+     STATUS BADGE COMPONENTS
+     ============================================================================ */
+  .badge-success {
+    background-color: var(--success-light);
+    color: var(--success);
+  }
+
+  .badge-warning {
+    background-color: var(--warning-light);
+    color: var(--warning-foreground);
+  }
+
+  .badge-error {
+    background-color: var(--error-light);
+    color: var(--error);
+  }
+
+  .badge-info {
+    background-color: var(--info-light);
+    color: var(--info);
+  }
+
+  .badge-neutral {
+    @apply bg-muted text-muted-foreground;
+  }
+
+  /* Product Badges */
+  .badge-new {
+    background-color: var(--badge-new);
+    color: var(--badge-new-foreground);
+  }
+
+  .badge-bestseller {
+    background-color: var(--badge-bestseller);
+    color: var(--badge-bestseller-foreground);
+  }
+
+  .badge-online-only {
+    background-color: var(--badge-online-only);
+    color: var(--badge-online-only-foreground);
+  }
+
+  .badge-limited {
+    background-color: var(--badge-limited);
+    color: var(--badge-limited-foreground);
+  }
+
+  .badge-sale {
+    background-color: var(--badge-sale);
+    color: var(--badge-sale-foreground);
+  }
+
+  .badge-out-of-stock {
+    background-color: var(--badge-out-of-stock);
+    color: var(--badge-out-of-stock-foreground);
+  }
+
+  /* Loyalty Badges */
+  .badge-loyalty-platinum {
+    background-color: var(--loyalty-platinum-light);
+    color: var(--loyalty-platinum);
+  }
+
+  .badge-loyalty-gold {
+    background-color: var(--loyalty-gold-light);
+    color: var(--loyalty-gold);
+  }
+
+  .badge-loyalty-silver {
+    background-color: var(--loyalty-silver-light);
+    color: var(--loyalty-silver);
+  }
+
+  .badge-loyalty-bronze {
+    background-color: var(--loyalty-bronze-light);
+    color: var(--loyalty-bronze);
+  }
+
+  /* ============================================================================
+     MODAL COMPONENTS
+     ============================================================================ */
+  .modal-backdrop {
+    @apply fixed inset-0;
+    background-color: oklch(0 0 0 / var(--opacity-backdrop));
+    z-index: var(--z-modal-backdrop);
+  }
+
+  .modal-content {
+    @apply fixed bg-card overflow-hidden;
+    border-radius: var(--radius-modal);
+    box-shadow: var(--shadow-modal);
+    z-index: var(--z-modal);
+    padding: var(--spacing-modal-padding);
+  }
+
+  /* ============================================================================
+     FORM COMPONENTS
+     ============================================================================ */
+  .input-base {
+    @apply w-full border border-input bg-background text-foreground placeholder:text-muted-foreground;
+    border-radius: var(--radius-input);
+    padding: var(--spacing-input-y) var(--spacing-input-x);
+    transition: border-color var(--duration-normal) var(--ease-default),
+                box-shadow var(--duration-normal) var(--ease-default);
+  }
+
+  .input-base:focus {
+    @apply outline-none border-primary ring-2 ring-primary/20;
+  }
+
+  /* ============================================================================
+     DROPDOWN COMPONENTS
+     ============================================================================ */
+  .dropdown-menu {
+    @apply bg-popover text-popover-foreground border border-border;
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-dropdown);
+    z-index: var(--z-dropdown);
+  }
+
+  /* ============================================================================
+     TOAST COMPONENTS
+     ============================================================================ */
+  .toast {
+    @apply fixed bg-card text-card-foreground;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    z-index: var(--z-toast);
+  }
+
+  /* ============================================================================
+     QUANTITY INPUT - Hide spinner controls
+     ============================================================================ */
   input[type="number"]::-webkit-inner-spin-button,
   input[type="number"]::-webkit-outer-spin-button {
     -webkit-appearance: none;
@@ -94,6 +442,12 @@
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  /* Tiny text utility for captions/micro text */
+  .text-micro {
+    font-size: 0.625rem; /* 10px */
+    line-height: 1.4;
   }
 
   .animate-fade-in {
@@ -117,7 +471,24 @@
     white-space: nowrap;
     border-width: 0;
   }
+
+  /* Backdrop utilities */
+  .backdrop-light {
+    background-color: oklch(0 0 0 / var(--opacity-backdrop-light));
+  }
+
+  .backdrop-default {
+    background-color: oklch(0 0 0 / var(--opacity-backdrop));
+  }
+
+  .backdrop-heavy {
+    background-color: oklch(0 0 0 / var(--opacity-backdrop-heavy));
+  }
 }
+
+/* ============================================================================
+   GLOBAL STYLES (outside layers)
+   ============================================================================ */
 
 /* Smooth scrolling */
 html {
@@ -132,7 +503,10 @@ html {
   overflow: hidden;
 }
 
-/* Animation keyframes */
+/* ============================================================================
+   ANIMATION KEYFRAMES
+   ============================================================================ */
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -180,15 +554,15 @@ html {
 @keyframes anchorPulse {
   0% {
     transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+    box-shadow: 0 0 0 0 oklch(0.59 0.2 264 / 40%);
   }
   50% {
     transform: scale(1.02);
-    box-shadow: 0 0 0 8px rgba(59, 130, 246, 0);
+    box-shadow: 0 0 0 8px oklch(0.59 0.2 264 / 0%);
   }
   100% {
     transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+    box-shadow: 0 0 0 0 oklch(0.59 0.2 264 / 0%);
   }
 }
 
@@ -234,10 +608,10 @@ html {
 .animate-skeleton-shimmer {
   background: linear-gradient(
     90deg,
-    #f3f4f6 0%,
-    #e5e7eb 20%,
-    #f3f4f6 40%,
-    #f3f4f6 100%
+    var(--brand-gray-100) 0%,
+    var(--brand-gray-200) 20%,
+    var(--brand-gray-100) 40%,
+    var(--brand-gray-100) 100%
   );
   background-size: 1000px 100%;
   animation: skeleton-shimmer 1.5s infinite;

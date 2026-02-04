@@ -17,7 +17,7 @@ import {
 // ============================================================================
 
 export const mockSiteConfig: SiteConfig = {
-  siteName: 'Market Street',
+  siteName: 'Salesforce Foundations',
   siteDescription: 'Premium geometric design objects for modern spaces',
   logoUrl: '/images/logo.svg',
   contactEmail: 'support@marketstreet.com',

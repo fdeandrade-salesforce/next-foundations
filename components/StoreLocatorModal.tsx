@@ -89,11 +89,11 @@ export default function StoreLocatorModal({
   const getStatusColor = (status: Store['status']) => {
     switch (status) {
       case 'open':
-        return 'text-green-600'
+        return 'text-success'
       case 'closing-soon':
-        return 'text-orange-500'
+        return 'text-warning'
       case 'closed':
-        return 'text-brand-gray-500'
+        return 'text-muted-foreground'
     }
   }
 
@@ -121,10 +121,10 @@ export default function StoreLocatorModal({
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black bg-opacity-40 transition-opacity" onClick={onClose} />
+      <div className="fixed inset-0 backdrop-light transition-opacity" onClick={onClose} />
 
       {/* Modal Panel - Slides in from right */}
-      <div className="fixed inset-y-0 right-0 max-w-lg w-full bg-white shadow-xl overflow-hidden flex flex-col animate-slide-in-right">
+      <div className="fixed inset-y-0 right-0 max-w-lg w-full bg-card shadow-modal overflow-hidden flex flex-col animate-slide-in-right">
         {/* Header */}
         <div className="flex items-start justify-between pt-6 px-6 pb-0">
           <h2 className="text-lg font-semibold text-brand-black tracking-tight">Find a Store</h2>
@@ -253,7 +253,7 @@ export default function StoreLocatorModal({
 
                         {/* Pickup Time */}
                         {store.pickupTime && selectedStore === store.id && (
-                          <p className="text-sm text-green-600 font-medium mt-2">
+                          <p className="text-sm text-success font-medium mt-2">
                             ✓ {store.pickupTime}
                           </p>
                         )}
@@ -313,7 +313,7 @@ export default function StoreLocatorModal({
                             {store.distance.toFixed(1)} miles away
                           </span>
                         </div>
-                        <p className="text-xs text-red-500 font-medium">Out of stock at this location</p>
+                        <p className="text-xs text-error font-medium">Out of stock at this location</p>
                       </div>
                     </div>
                     {index < unavailableStores.length - 1 && (

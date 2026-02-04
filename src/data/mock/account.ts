@@ -68,7 +68,7 @@ export const mockAddresses: Address[] = [
     customerId: 'customer-1',
     firstName: 'John',
     lastName: 'Doe',
-    addressLine1: '789 Market Street',
+    addressLine1: '789 Salesforce Foundations',
     city: 'San Francisco',
     state: 'CA',
     zipCode: '94102',

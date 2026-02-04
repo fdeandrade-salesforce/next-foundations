@@ -1,4 +1,4 @@
--- Market Street E-commerce Seed Data
+-- Salesforce Foundations E-commerce Seed Data
 -- Run this in your Supabase SQL Editor after running schema.sql
 -- This inserts sample data that matches the mock data structure
 
@@ -7,11 +7,11 @@
 -- ============================================================================
 
 INSERT INTO products (id, name, brand, price, original_price, image, category, subcategory, color, in_stock, stock_quantity, store_available, rating, review_count, is_new, is_best_seller, sku, short_description, promotional_message) VALUES
-('pure-cube-white', 'Pure Cube', 'Market Street', 49.00, NULL, '/images/products/pure-cube-white-1.png', 'Geometric', 'Cubes', 'White', true, 24, true, 4.8, 45, true, false, 'PC-001-WHT', 'Minimalist cube design with perfect proportions.', 'Extra 20% Off with code WELCOME20'),
-('pure-cube-black', 'Pure Cube', 'Market Street', 49.00, NULL, '/images/products/pure-cube-black-1.png', 'Geometric', 'Cubes', 'Black', false, 0, false, 4.9, 89, false, true, 'PC-002-BLK', 'Minimalist cube design with perfect proportions.', NULL),
-('pure-cube-gray', 'Pure Cube', 'Market Street', 75.00, 89.00, '/images/products/pure-cube-gray-1.png', 'Geometric', 'Cubes', 'Gray', true, 8, true, 4.7, 56, false, false, 'PC-003-GRY', 'Minimalist cube design with perfect proportions.', NULL),
-('solid-cylinder', 'Solid Cylinder', 'Market Street', 59.00, NULL, '/images/products/solid-cylinder-1.png', 'Geometric', 'Cylinders', NULL, true, 50, true, 4.6, 32, false, false, 'SC-001-NTR', 'Robust cylindrical form with timeless appeal.', NULL),
-('steady-prism', 'Steady Prism', 'Market Street', 65.00, NULL, '/images/products/steady-prism-1.png', 'Geometric', 'Prisms', NULL, true, 15, true, 4.5, 28, true, false, 'SP-001-NTR', 'Elegant prismatic form with geometric precision.', NULL);
+('pure-cube-white', 'Pure Cube', 'Salesforce Foundations', 49.00, NULL, '/images/products/pure-cube-white-1.png', 'Geometric', 'Cubes', 'White', true, 24, true, 4.8, 45, true, false, 'PC-001-WHT', 'Minimalist cube design with perfect proportions.', 'Extra 20% Off with code WELCOME20'),
+('pure-cube-black', 'Pure Cube', 'Salesforce Foundations', 49.00, NULL, '/images/products/pure-cube-black-1.png', 'Geometric', 'Cubes', 'Black', false, 0, false, 4.9, 89, false, true, 'PC-002-BLK', 'Minimalist cube design with perfect proportions.', NULL),
+('pure-cube-gray', 'Pure Cube', 'Salesforce Foundations', 75.00, 89.00, '/images/products/pure-cube-gray-1.png', 'Geometric', 'Cubes', 'Gray', true, 8, true, 4.7, 56, false, false, 'PC-003-GRY', 'Minimalist cube design with perfect proportions.', NULL),
+('solid-cylinder', 'Solid Cylinder', 'Salesforce Foundations', 59.00, NULL, '/images/products/solid-cylinder-1.png', 'Geometric', 'Cylinders', NULL, true, 50, true, 4.6, 32, false, false, 'SC-001-NTR', 'Robust cylindrical form with timeless appeal.', NULL),
+('steady-prism', 'Steady Prism', 'Salesforce Foundations', 65.00, NULL, '/images/products/steady-prism-1.png', 'Geometric', 'Prisms', NULL, true, 15, true, 4.5, 28, true, false, 'SP-001-NTR', 'Elegant prismatic form with geometric precision.', NULL);
 
 -- Product images
 INSERT INTO product_images (product_id, image_url, image_order) VALUES
@@ -41,8 +41,8 @@ INSERT INTO reviews (id, product_id, author, rating, date, title, content, verif
 -- ============================================================================
 
 INSERT INTO stores (id, name, address, city, state, zip, phone, email, latitude, longitude, hours, status, distance, pickup_time) VALUES
-('store-1', 'Market Street San Francisco', '415 Mission Street', 'San Francisco', 'CA', '94105', '(415) 555-0100', 'sf@marketstreet.com', 37.7749, -122.4194, '{"monday": "10:00-20:00", "tuesday": "10:00-20:00", "wednesday": "10:00-20:00", "thursday": "10:00-20:00", "friday": "10:00-21:00", "saturday": "10:00-21:00", "sunday": "11:00-19:00"}'::jsonb, 'open', 0.5, '2-3 hours'),
-('store-2', 'Market Street New York', '123 Broadway', 'New York', 'NY', '10001', '(212) 555-0100', 'ny@marketstreet.com', 40.7128, -74.0060, '{"monday": "10:00-20:00", "tuesday": "10:00-20:00", "wednesday": "10:00-20:00", "thursday": "10:00-20:00", "friday": "10:00-21:00", "saturday": "10:00-21:00", "sunday": "11:00-19:00"}'::jsonb, 'open', 1.2, '3-4 hours');
+('store-1', 'Salesforce Foundations San Francisco', '415 Mission Street', 'San Francisco', 'CA', '94105', '(415) 555-0100', 'sf@marketstreet.com', 37.7749, -122.4194, '{"monday": "10:00-20:00", "tuesday": "10:00-20:00", "wednesday": "10:00-20:00", "thursday": "10:00-20:00", "friday": "10:00-21:00", "saturday": "10:00-21:00", "sunday": "11:00-19:00"}'::jsonb, 'open', 0.5, '2-3 hours'),
+('store-2', 'Salesforce Foundations New York', '123 Broadway', 'New York', 'NY', '10001', '(212) 555-0100', 'ny@marketstreet.com', 40.7128, -74.0060, '{"monday": "10:00-20:00", "tuesday": "10:00-20:00", "wednesday": "10:00-20:00", "thursday": "10:00-20:00", "friday": "10:00-21:00", "saturday": "10:00-21:00", "sunday": "11:00-19:00"}'::jsonb, 'open', 1.2, '3-4 hours');
 
 -- ============================================================================
 -- ACCOUNT PROFILES
@@ -61,18 +61,18 @@ INSERT INTO orders (order_number, customer_id, status, method, amount, order_dat
 
 -- Order items for INV001
 INSERT INTO order_items (order_number, product_id, product_name, product_image, quantity, color, size, price, original_price, store, shipping_group) VALUES
-('INV001', 'pure-cube-white', 'Pure Cube', '/images/products/pure-cube-white-1.png', 3, 'Grey', 'XL', 15.00, 20.00, 'Market Street San Francisco', 'sf-store-address1'),
-('INV001', 'steady-prism', 'Steady Prism', '/images/products/steady-prism-1.png', 2, 'Grey', 'XL', 15.00, 20.00, 'Market Street San Francisco', 'sf-store-address1'),
-('INV001', 'solid-cylinder', 'Solid Cylinder', '/images/products/solid-cylinder-1.png', 1, 'Grey', 'XL', 15.00, 20.00, 'Market Street San Francisco', 'sf-store-address2');
+('INV001', 'pure-cube-white', 'Pure Cube', '/images/products/pure-cube-white-1.png', 3, 'Grey', 'XL', 15.00, 20.00, 'Salesforce Foundations San Francisco', 'sf-store-address1'),
+('INV001', 'steady-prism', 'Steady Prism', '/images/products/steady-prism-1.png', 2, 'Grey', 'XL', 15.00, 20.00, 'Salesforce Foundations San Francisco', 'sf-store-address1'),
+('INV001', 'solid-cylinder', 'Solid Cylinder', '/images/products/solid-cylinder-1.png', 1, 'Grey', 'XL', 15.00, 20.00, 'Salesforce Foundations San Francisco', 'sf-store-address2');
 
 -- Order items for INV002
 INSERT INTO order_items (order_number, product_id, product_name, product_image, quantity, color, size, price, original_price, store) VALUES
-('INV002', 'pure-cube-gray', 'Pure Cube', '/images/products/pure-cube-gray-1.png', 1, 'Gray', 'M', 75.00, 89.00, 'Market Street San Francisco');
+('INV002', 'pure-cube-gray', 'Pure Cube', '/images/products/pure-cube-gray-1.png', 1, 'Gray', 'M', 75.00, 89.00, 'Salesforce Foundations San Francisco');
 
 -- Shipping groups for INV001
 INSERT INTO shipping_groups (order_number, group_id, store, status, tracking_number, carrier, carrier_tracking_url, delivery_date, shipping_method, shipping_address) VALUES
-('INV001', 'sf-store-address1', 'Market Street San Francisco', 'Delivered', '1Z999AA10123456784', 'UPS', 'https://www.ups.com/track?tracknum=1Z999AA10123456784', 'Sep 15, 2024', 'Standard Shipping', 'John Doe, 415 Mission Street, 94105, San Francisco, CA, United States'),
-('INV001', 'sf-store-address2', 'Market Street San Francisco', 'In Transit', '1Z999AA10123456785', 'UPS', 'https://www.ups.com/track?tracknum=1Z999AA10123456785', 'Sep 20-22, 2024', 'Standard Shipping', 'John Doe, 415 Mission Street, 94105, San Francisco, CA, United States');
+('INV001', 'sf-store-address1', 'Salesforce Foundations San Francisco', 'Delivered', '1Z999AA10123456784', 'UPS', 'https://www.ups.com/track?tracknum=1Z999AA10123456784', 'Sep 15, 2024', 'Standard Shipping', 'John Doe, 415 Mission Street, 94105, San Francisco, CA, United States'),
+('INV001', 'sf-store-address2', 'Salesforce Foundations San Francisco', 'In Transit', '1Z999AA10123456785', 'UPS', 'https://www.ups.com/track?tracknum=1Z999AA10123456785', 'Sep 20-22, 2024', 'Standard Shipping', 'John Doe, 415 Mission Street, 94105, San Francisco, CA, United States');
 
 -- ============================================================================
 -- ADDRESSES

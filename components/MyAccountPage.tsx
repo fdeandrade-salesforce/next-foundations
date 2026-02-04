@@ -9,8 +9,8 @@ import Footer from './Footer'
 import AnnouncementBar from './AnnouncementBar'
 import ProductCard from './ProductCard'
 import { Product } from './ProductListingPage'
-import { getFeaturedProducts, getAllProducts, getProductById } from '../lib/products'
-import { getWishlist, removeFromWishlist } from '../lib/wishlist'
+import { getFeaturedProducts, getAllProducts, getAllProductsWithVariants, getProductById } from '../lib/products'
+import { getWishlist, removeFromWishlist, needsVariantSelection, toggleWishlist, WishlistProduct } from '../lib/wishlist'
 import { addToCart } from '../lib/cart'
 import { getCurrentUser, User } from '../lib/auth'
 import { getOrderRepo } from '../src/data'
@@ -96,7 +96,7 @@ interface Wishlist {
 
 interface PaymentMethod {
   id: string
-  type: 'visa' | 'mastercard' | 'ach' | 'apple-pay' | 'paypal'
+  type: 'visa' | 'mastercard' | 'ach' | 'apple-pay' | 'paypal' | 'sepa' | 'pix'
   last4?: string
   bankName?: string
   expiryMonth?: number
@@ -104,6 +104,40 @@ interface PaymentMethod {
   cardholderName: string
   isDefault: boolean
   isSelected?: boolean
+  country?: string
+  iban?: string
+  pixKey?: string
+}
+
+// Country configuration for payment methods
+const PAYMENT_COUNTRIES = [
+  { code: 'US', name: 'United States', flag: '🇺🇸' },
+  { code: 'FR', name: 'France', flag: '🇫🇷' },
+  { code: 'BR', name: 'Brazil', flag: '🇧🇷' },
+] as const
+
+type PaymentCountryCode = typeof PAYMENT_COUNTRIES[number]['code']
+
+interface RegionalPaymentMethod {
+  id: string
+  name: string
+  type: 'credit-card' | 'ach' | 'sepa' | 'pix'
+  icon: 'card' | 'bank' | 'pix'
+}
+
+const PAYMENT_METHODS_BY_COUNTRY: Record<PaymentCountryCode, RegionalPaymentMethod[]> = {
+  US: [
+    { id: 'credit-card', name: 'Credit Card', type: 'credit-card', icon: 'card' },
+    { id: 'ach', name: 'ACH', type: 'ach', icon: 'bank' },
+  ],
+  FR: [
+    { id: 'credit-card', name: 'Credit Card', type: 'credit-card', icon: 'card' },
+    { id: 'sepa', name: 'SEPA Direct Debit', type: 'sepa', icon: 'bank' },
+  ],
+  BR: [
+    { id: 'credit-card', name: 'Credit Card', type: 'credit-card', icon: 'card' },
+    { id: 'pix', name: 'PIX', type: 'pix', icon: 'pix' },
+  ],
 }
 
 interface Address {
@@ -539,7 +573,7 @@ function OrderDetailContent({ orderNumber, showToastMessage }: { orderNumber: st
           </div>
           
           {/* Order Summary */}
-          <div className="lg:sticky lg:top-4 space-y-4 self-start">
+          <div className="lg:sticky lg:top-20 space-y-4 self-start">
             <h3 className="text-lg font-semibold text-brand-black">Order Summary</h3>
             <div className="bg-brand-gray-50 rounded-lg p-4 space-y-3">
               <div className="flex justify-between text-sm">
@@ -983,15 +1017,22 @@ function OrderDetailContent({ orderNumber, showToastMessage }: { orderNumber: st
 // Cross-Sell Component for Order Pages
 function CrossSellSection() {
   const [crossSellProducts, setCrossSellProducts] = useState<Product[]>([])
+  const [allProductsForVariants, setAllProductsForVariants] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
+  const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null)
+  const [notifyMeProduct, setNotifyMeProduct] = useState<Product | null>(null)
 
   useEffect(() => {
-    // Fetch featured products for cross-sell
+    // Fetch featured products for cross-sell and all products for variant resolution
     const fetchProducts = async () => {
       try {
-        const products = await getFeaturedProducts()
+        const [featured, all] = await Promise.all([
+          getFeaturedProducts(),
+          getAllProductsWithVariants()
+        ])
         // Get first 4 products for cross-sell
-        setCrossSellProducts(products.slice(0, 4))
+        setCrossSellProducts(featured.slice(0, 4))
+        setAllProductsForVariants(all)
       } catch (error) {
         console.error('Error fetching cross-sell products:', error)
       } finally {
@@ -1001,6 +1042,41 @@ function CrossSellSection() {
 
     fetchProducts()
   }, [])
+
+  // Helper function to check if product has variants
+  const hasVariants = (product: Product): boolean => {
+    if (product.size && product.size.length > 1) return true
+    if (product.colors && product.colors.length > 1) return true
+    if (product.variants && product.variants > 0) return true
+    return false
+  }
+
+  // Unified handler for Quick View/Quick Add
+  const handleUnifiedAction = (product: Product) => {
+    if (!product.inStock) {
+      setNotifyMeProduct(product)
+      return
+    }
+
+    if (hasVariants(product)) {
+      setQuickViewProduct(product)
+    } else {
+      addToCart(product, 1)
+    }
+  }
+
+  const handleAddToCart = (product: Product, quantity: number = 1, size?: string, color?: string) => {
+    addToCart(product, quantity, size, color)
+  }
+
+  const handleAddToWishlist = (product: Product, size?: string, color?: string) => {
+    // Only pass size/color if they were explicitly selected (from QuickViewModal)
+    toggleWishlist(product, size, color, size || color ? 'pdp' : 'card')
+  }
+
+  const handleNotifyMe = (email: string) => {
+    console.log(`Notify ${email} when ${notifyMeProduct?.name} is available`)
+  }
 
   if (loading) {
     return (
@@ -1017,21 +1093,45 @@ function CrossSellSection() {
   }
 
   return (
-    <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
-      <h2 className="text-xl font-semibold text-brand-black mb-4">You May Also Like</h2>
-      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4">
-        {crossSellProducts.map((product) => (
-          <ProductCard
-            key={product.id}
-            product={product}
-            onQuickView={(product) => {
-              // Handle quick view if needed
-              console.log('Quick view:', product)
-            }}
-          />
-        ))}
+    <>
+      <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
+        <h2 className="text-xl font-semibold text-brand-black mb-4">You May Also Like</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          {crossSellProducts.map((product) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              onUnifiedAction={handleUnifiedAction}
+              onAddToWishlist={handleAddToWishlist}
+              allProducts={allProductsForVariants}
+            />
+          ))}
+        </div>
       </div>
-    </div>
+
+      {/* Quick View Modal */}
+      {quickViewProduct && (
+        <QuickViewModal
+          product={quickViewProduct}
+          productVariants={[]}
+          isOpen={!!quickViewProduct}
+          onClose={() => setQuickViewProduct(null)}
+          onAddToCart={handleAddToCart}
+          onAddToWishlist={handleAddToWishlist}
+          onNotify={(product) => setNotifyMeProduct(product)}
+        />
+      )}
+
+      {/* Notify Me Modal */}
+      {notifyMeProduct && (
+        <NotifyMeModal
+          product={notifyMeProduct}
+          isOpen={!!notifyMeProduct}
+          onClose={() => setNotifyMeProduct(null)}
+          onNotify={handleNotifyMe}
+        />
+      )}
+    </>
   )
 }
 
@@ -1129,6 +1229,12 @@ export default function MyAccountPage() {
   
   const [activeSection, setActiveSection] = useState(getActiveSectionFromPath())
   const wishlistCount = 23 // Total items in default wishlist
+  
+  // FEATURE FLAG: Multiple Wishlists
+  // Set to true to enable multiple wishlist functionality (create lists, rename, share, delete)
+  // Set to false for single wishlist mode
+  // To restore multiple wishlists: search for "MULTI_WISHLIST_FEATURE" and set this to true
+  const ENABLE_MULTIPLE_WISHLISTS = false // MULTI_WISHLIST_FEATURE
   
   // Get logged-in user data
   const [user, setUser] = useState<User | null>(null)
@@ -1245,7 +1351,7 @@ export default function MyAccountPage() {
     
     const loadProducts = async () => {
       try {
-        const products = await getAllProducts()
+        const products = await getAllProductsWithVariants()
         setAllProducts(products)
       } catch (error) {
         console.error('Error loading products:', error)
@@ -1462,7 +1568,7 @@ export default function MyAccountPage() {
   const [showStoreSelector, setShowStoreSelector] = useState(false)
   const [preferredStoreForPickup, setPreferredStoreForPickup] = useState({
     id: '1',
-    name: 'Market Street - San Francisco',
+    name: 'Salesforce Foundations - San Francisco',
     address: '415 Mission Street, San Francisco, CA 94105',
     hours: 'Open today: 10:00 AM - 8:00 PM',
   })
@@ -2100,13 +2206,23 @@ export default function MyAccountPage() {
   const [showAvatarModal, setShowAvatarModal] = useState(false)
   const [avatarImage, setAvatarImage] = useState<string | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
-  const [paymentForm, setPaymentForm] = useState<Partial<PaymentMethod>>({
+  const [paymentForm, setPaymentForm] = useState<Partial<PaymentMethod> & { selectedCountry?: PaymentCountryCode; selectedMethodType?: string; cardNumber?: string }>({
     type: 'visa',
     cardholderName: '',
-    last4: '',
-    expiryMonth: undefined,
-    expiryYear: undefined,
-    bankName: '',
+    selectedCountry: 'US',
+    selectedMethodType: '',
+    cardNumber: '',
+  })
+  const [showNewBillingAddress, setShowNewBillingAddress] = useState(false)
+  const [selectedBillingAddressId, setSelectedBillingAddressId] = useState('')
+  const [newBillingAddress, setNewBillingAddress] = useState({
+    firstName: '',
+    lastName: '',
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    state: '',
+    zipCode: '',
   })
   const [showRemovePaymentMethodModal, setShowRemovePaymentMethodModal] = useState(false)
   const [paymentMethodToRemove, setPaymentMethodToRemove] = useState<string | null>(null)
@@ -2288,7 +2404,7 @@ export default function MyAccountPage() {
         const wishlistsToSave = wishlists.map(w => 
           w.id === renamingWishlistId ? { ...w, name: newWishlistName.trim() } : w
         ).filter(w => !w.isDefault)
-        localStorage.setItem('marketstreet_wishlists', JSON.stringify(wishlistsToSave))
+        localStorage.setItem('sfdc_foundations_wishlists', JSON.stringify(wishlistsToSave))
       }
       
       showToastMessage('Wishlist renamed successfully', 'success')
@@ -2305,7 +2421,7 @@ export default function MyAccountPage() {
       // Save to localStorage
       if (typeof window !== 'undefined') {
         const wishlistsToSave = wishlists.filter(w => w.id !== wishlistId && !w.isDefault)
-        localStorage.setItem('marketstreet_wishlists', JSON.stringify(wishlistsToSave))
+        localStorage.setItem('sfdc_foundations_wishlists', JSON.stringify(wishlistsToSave))
       }
       
       if (selectedWishlistId === wishlistId) {
@@ -2336,7 +2452,7 @@ export default function MyAccountPage() {
       // Save to localStorage
       if (typeof window !== 'undefined') {
         const wishlistsToSave = [...wishlists.filter(w => !w.isDefault), newWishlist]
-        localStorage.setItem('marketstreet_wishlists', JSON.stringify(wishlistsToSave))
+        localStorage.setItem('sfdc_foundations_wishlists', JSON.stringify(wishlistsToSave))
       }
       
       showToastMessage('Wishlist created successfully', 'success')
@@ -2354,6 +2470,19 @@ export default function MyAccountPage() {
   const handleAddToCart = (product: Product, size?: string, color?: string) => {
     addToCart(product, 1, size, color)
     showToastMessage(`${product.name} added to cart`, 'success')
+  }
+  
+  // Handle add to cart from wishlist - opens QuickView if variants need selection
+  const handleWishlistAddToCart = (item: WishlistItem) => {
+    // Check if item needs variant selection
+    if (needsVariantSelection(item as WishlistProduct)) {
+      // Open QuickView modal to select variants
+      setQuickViewProduct(item)
+    } else {
+      // Add directly to cart with existing selections
+      addToCart(item, 1, item.selectedSize, item.selectedColor)
+      showToastMessage(`${item.name} added to cart`, 'success')
+    }
   }
 
   const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2425,9 +2554,9 @@ export default function MyAccountPage() {
     showToastMessage(`We'll notify you when ${notifyMeProduct?.name} is available`, 'success')
   }
 
-  const handleCuratedAddToWishlist = (product: Product) => {
-    console.log('Add to wishlist:', product.id)
-    // Add to wishlist logic here
+  const handleCuratedAddToWishlist = (product: Product, size?: string, color?: string) => {
+    // Only pass size/color if they were explicitly selected (from QuickViewModal)
+    toggleWishlist(product, size, color, size || color ? 'pdp' : 'card')
   }
 
   // Load wishlist products on mount and when wishlist section is active
@@ -2437,16 +2566,23 @@ export default function MyAccountPage() {
       setWishlistProducts(products)
       
       // Initialize wishlists with default one containing wishlist products
+      // Preserve selectedColor and selectedSize from the wishlist if they were explicitly set (from PDP)
+      // Only fall back to defaults if not set AND if product has multiple options
       const defaultWishlist: Wishlist = {
         id: 'my-favorites',
         name: 'My Favorites',
         isDefault: true,
         itemCount: products.length,
-        items: products.map(p => ({ ...p, selectedColor: p.color, selectedSize: p.size?.[0] })),
+        items: products.map(p => ({ 
+          ...p, 
+          // Only use saved selection, don't auto-assign if not explicitly selected
+          selectedColor: p.selectedColor, 
+          selectedSize: p.selectedSize 
+        })),
       }
       
       // Load additional wishlists from localStorage or use defaults
-      const savedWishlists = typeof window !== 'undefined' ? localStorage.getItem('marketstreet_wishlists') : null
+      const savedWishlists = typeof window !== 'undefined' ? localStorage.getItem('sfdc_foundations_wishlists') : null
       const additionalWishlists: Wishlist[] = savedWishlists 
         ? JSON.parse(savedWishlists)
         : [
@@ -2468,7 +2604,12 @@ export default function MyAccountPage() {
         setWishlists(prev => {
           const defaultWishlist = prev.find(w => w.id === 'my-favorites')
           if (defaultWishlist) {
-            defaultWishlist.items = products.map(p => ({ ...p, selectedColor: p.color, selectedSize: p.size?.[0] }))
+            // Preserve selectedColor and selectedSize from the wishlist if they were explicitly set
+            defaultWishlist.items = products.map(p => ({ 
+              ...p, 
+              selectedColor: p.selectedColor, 
+              selectedSize: p.selectedSize 
+            }))
             defaultWishlist.itemCount = products.length
             return prev.map(w => w.id === 'my-favorites' ? defaultWishlist : w)
           }
@@ -2512,7 +2653,7 @@ export default function MyAccountPage() {
               ? 'lg:w-12' 
               : 'lg:w-64'
           }`}>
-            <div className="sticky top-4">
+            <div className="sticky top-20">
               {/* Header with Toggle */}
               <div className="flex items-center justify-between mb-4 lg:mb-6 overflow-hidden">
                 <h2 className={`text-lg font-semibold text-brand-black whitespace-nowrap truncate transition-all duration-300 ${
@@ -2924,6 +3065,7 @@ export default function MyAccountPage() {
                         product={product}
                         onUnifiedAction={handleCuratedUnifiedAction}
                         onAddToWishlist={handleCuratedAddToWishlist}
+                        allProducts={allProducts}
                       />
                     ))}
                   </div>
@@ -3999,7 +4141,7 @@ export default function MyAccountPage() {
                     {/* Legal Disclaimer */}
                     <div className="pt-4 border-t border-brand-gray-200">
                       <p className="text-sm text-brand-gray-700 leading-relaxed">
-                        By enabling these communication preferences, you agree to receive marketing communications from Market Street, including exclusive offers, latest product info, news about upcoming collections and more. Please see our{' '}
+                        By enabling these communication preferences, you agree to receive marketing communications from Salesforce Foundations, including exclusive offers, latest product info, news about upcoming collections and more. Please see our{' '}
                         <a href="/terms" className="text-brand-blue-500 hover:text-brand-blue-600 hover:underline">Terms & Conditions</a> and{' '}
                         <a href="/privacy" className="text-brand-blue-500 hover:text-brand-blue-600 hover:underline">Privacy Policy</a> for more details.
                       </p>
@@ -4308,146 +4450,154 @@ export default function MyAccountPage() {
                 <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h2 className="text-2xl font-semibold text-brand-black mb-1.5">My Wishlists</h2>
-                      <p className="text-sm text-brand-gray-600">Manage your personal information</p>
+                      <h2 className="text-2xl font-semibold text-brand-black mb-1.5">{ENABLE_MULTIPLE_WISHLISTS ? 'My Wishlists' : 'My Wishlist'}</h2>
+                      <p className="text-sm text-brand-gray-600">{ENABLE_MULTIPLE_WISHLISTS ? 'Manage your wishlists and saved items' : 'Your saved items for later'}</p>
                     </div>
-                    <button 
-                      onClick={() => {
-                        setNewWishlistName('')
-                        setShowCreateWishlistModal(true)
-                      }}
-                      className="px-4 py-2 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm"
-                    >
-                      Create new list
-                    </button>
+                    {/* MULTI_WISHLIST_FEATURE: Create new list button - hidden in single wishlist mode */}
+                    {ENABLE_MULTIPLE_WISHLISTS && (
+                      <button 
+                        onClick={() => {
+                          setNewWishlistName('')
+                          setShowCreateWishlistModal(true)
+                        }}
+                        className="px-4 py-2 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm"
+                      >
+                        Create new list
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                {/* Two Column Layout */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Left Column - Your Lists */}
-                  <div className="lg:col-span-1">
-                    <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
-                      <h3 className="text-base font-semibold text-brand-black mb-4">Your Lists</h3>
-                      <div className="space-y-1">
-                        {wishlists.map((list) => (
-                          <div
-                            key={list.id}
-                            onClick={() => {
-                              setSelectedWishlistId(list.id)
-                              setCurrentPage(1)
-                            }}
-                            className={`w-full flex items-center justify-between px-4 py-3 rounded-lg text-left transition-colors cursor-pointer ${
-                              selectedWishlistId === list.id
-                                ? 'bg-brand-blue-50 text-brand-blue-600'
-                                : 'text-brand-black hover:bg-brand-gray-50'
-                            }`}
-                          >
-                            <div className="flex items-center gap-3 flex-1">
-                              {list.isDefault ? (
-                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                                </svg>
-                              ) : (
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                                </svg>
-                              )}
-                              <div className="flex-1">
-                                <p className={`text-sm font-medium ${selectedWishlistId === list.id ? 'text-brand-blue-600' : 'text-brand-black'}`}>
-                                  {list.name}
-                                </p>
-                                {list.isDefault && (
-                                  <p className="text-xs text-brand-gray-500 mt-0.5">Default List - {list.itemCount} items</p>
+                {/* Two Column Layout - MULTI_WISHLIST_FEATURE: Changes to single column when disabled */}
+                <div className={`grid grid-cols-1 gap-6 ${ENABLE_MULTIPLE_WISHLISTS ? 'lg:grid-cols-3' : ''}`}>
+                  {/* MULTI_WISHLIST_FEATURE: Left Column - Your Lists - hidden in single wishlist mode */}
+                  {ENABLE_MULTIPLE_WISHLISTS && (
+                    <div className="lg:col-span-1">
+                      <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
+                        <h3 className="text-base font-semibold text-brand-black mb-4">Your Lists</h3>
+                        <div className="space-y-1">
+                          {wishlists.map((list) => (
+                            <div
+                              key={list.id}
+                              onClick={() => {
+                                setSelectedWishlistId(list.id)
+                                setCurrentPage(1)
+                              }}
+                              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg text-left transition-colors cursor-pointer ${
+                                selectedWishlistId === list.id
+                                  ? 'bg-brand-blue-50 text-brand-blue-600'
+                                  : 'text-brand-black hover:bg-brand-gray-50'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3 flex-1">
+                                {list.isDefault ? (
+                                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                                  </svg>
+                                ) : (
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                                  </svg>
                                 )}
+                                <div className="flex-1">
+                                  <p className={`text-sm font-medium ${selectedWishlistId === list.id ? 'text-brand-blue-600' : 'text-brand-black'}`}>
+                                    {list.name}
+                                  </p>
+                                  {list.isDefault && (
+                                    <p className="text-xs text-brand-gray-500 mt-0.5">Default List - {list.itemCount} items</p>
+                                  )}
+                                  {!list.isDefault && (
+                                    <p className="text-xs text-brand-gray-500 mt-0.5">{list.itemCount} items</p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  onClick={() => handleRenameWishlist(list.id)}
+                                  className="p-1.5 text-brand-gray-500 hover:text-brand-blue-600 hover:bg-brand-blue-50 rounded transition-colors"
+                                  title="Rename"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => handleShareWishlist(list.id)}
+                                  className="p-1.5 text-brand-gray-500 hover:text-brand-blue-600 hover:bg-brand-blue-50 rounded transition-colors"
+                                  title="Share"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                                  </svg>
+                                </button>
                                 {!list.isDefault && (
-                                  <p className="text-xs text-brand-gray-500 mt-0.5">{list.itemCount} items</p>
+                                  <button
+                                    onClick={() => handleDeleteWishlist(list.id)}
+                                    className="p-1.5 text-brand-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                    title="Delete"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                  </button>
                                 )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                onClick={() => handleRenameWishlist(list.id)}
-                                className="p-1.5 text-brand-gray-500 hover:text-brand-blue-600 hover:bg-brand-blue-50 rounded transition-colors"
-                                title="Rename"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                </svg>
-                              </button>
-                              <button
-                                onClick={() => handleShareWishlist(list.id)}
-                                className="p-1.5 text-brand-gray-500 hover:text-brand-blue-600 hover:bg-brand-blue-50 rounded transition-colors"
-                                title="Share"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                                </svg>
-                              </button>
-                              {!list.isDefault && (
-                                <button
-                                  onClick={() => handleDeleteWishlist(list.id)}
-                                  className="p-1.5 text-brand-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                  title="Delete"
-                                >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                  </svg>
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
-                  {/* Right Column - Wishlist Items */}
-                  <div className="lg:col-span-2">
+                  {/* Right Column - Wishlist Items (full width in single wishlist mode) */}
+                  <div className={ENABLE_MULTIPLE_WISHLISTS ? 'lg:col-span-2' : ''}>
                     <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm">
                       {/* Wishlist Items Header */}
-                      <div className="p-6 border-b border-brand-gray-200">
-                        <div className="flex items-center justify-between mb-4">
+                      <div className="p-4 sm:p-6 border-b border-brand-gray-200">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                           <div>
-                            <h3 className="text-lg font-semibold text-brand-black mb-1">{selectedWishlist.name}</h3>
-                            <p className="text-sm text-brand-gray-600">{selectedWishlist.itemCount} items saved.</p>
+                            <h3 className="text-base sm:text-lg font-semibold text-brand-black mb-0.5 sm:mb-1">{ENABLE_MULTIPLE_WISHLISTS ? selectedWishlist.name : 'Saved Items'}</h3>
+                            <p className="text-xs sm:text-sm text-brand-gray-600">{selectedWishlist.itemCount} items saved</p>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <button 
-                              onClick={() => handleRenameWishlist(selectedWishlistId)}
-                              className="px-4 py-2 text-sm font-medium bg-white border border-brand-gray-300 text-brand-black rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
-                            >
-                              Rename
-                            </button>
-                            <button 
-                              onClick={() => handleShareWishlist(selectedWishlistId)}
-                              className="px-4 py-2 text-sm font-medium bg-white border border-brand-gray-300 text-brand-black rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
-                            >
-                              Share
-                            </button>
-                            {!selectedWishlist.isDefault && (
+                          {/* MULTI_WISHLIST_FEATURE: Action buttons - hidden in single wishlist mode */}
+                          {ENABLE_MULTIPLE_WISHLISTS && (
+                            <div className="flex items-center gap-2">
                               <button 
-                                onClick={() => handleDeleteWishlist(selectedWishlistId)}
-                                className="px-4 py-2 text-sm font-medium bg-white border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition-colors shadow-sm"
+                                onClick={() => handleRenameWishlist(selectedWishlistId)}
+                                className="px-4 py-2 text-sm font-medium bg-white border border-brand-gray-300 text-brand-black rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
                               >
-                                Delete
+                                Rename
                               </button>
-                            )}
-                            <button className="px-4 py-2 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm">
-                              + Add Item
-                            </button>
-                          </div>
+                              <button 
+                                onClick={() => handleShareWishlist(selectedWishlistId)}
+                                className="px-4 py-2 text-sm font-medium bg-white border border-brand-gray-300 text-brand-black rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
+                              >
+                                Share
+                              </button>
+                              {!selectedWishlist.isDefault && (
+                                <button 
+                                  onClick={() => handleDeleteWishlist(selectedWishlistId)}
+                                  className="px-4 py-2 text-sm font-medium bg-white border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition-colors shadow-sm"
+                                >
+                                  Delete
+                                </button>
+                              )}
+                              <button className="px-4 py-2 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm">
+                                + Add Item
+                              </button>
+                            </div>
+                          )}
                         </div>
                         
                         {/* Sort and Filter Controls */}
-                        <div className="flex items-center gap-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
                           <div className="flex items-center gap-2">
-                            <label className="text-sm font-medium text-brand-gray-600">Sort by:</label>
-                            <div className="relative">
+                            <label className="text-sm font-medium text-brand-gray-600 whitespace-nowrap">Sort:</label>
+                            <div className="relative flex-1 sm:flex-none">
                               <select
                                 value={wishlistSortBy}
                                 onChange={(e) => setWishlistSortBy(e.target.value as any)}
-                                className="px-3 py-1.5 pr-10 border border-brand-gray-300 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent appearance-none bg-white"
+                                className="w-full sm:w-auto px-3 py-2 pr-10 border border-brand-gray-300 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent appearance-none bg-white"
                               >
                                 <option value="recent">Recently Added</option>
                                 <option value="name">Name (A-Z)</option>
@@ -4462,12 +4612,12 @@ export default function MyAccountPage() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <label className="text-sm font-medium text-brand-gray-600">Filter:</label>
-                            <div className="relative">
+                            <label className="text-sm font-medium text-brand-gray-600 whitespace-nowrap">Filter:</label>
+                            <div className="relative flex-1 sm:flex-none">
                               <select
                                 value={wishlistFilter}
                                 onChange={(e) => setWishlistFilter(e.target.value)}
-                                className="px-3 py-1.5 pr-10 border border-brand-gray-300 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent appearance-none bg-white"
+                                className="w-full sm:w-auto px-3 py-2 pr-10 border border-brand-gray-300 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent appearance-none bg-white"
                               >
                                 <option value="all">All Items</option>
                                 <option value="in-stock">In Stock</option>
@@ -4485,7 +4635,7 @@ export default function MyAccountPage() {
                       </div>
 
                       {/* Wishlist Items Grid */}
-                      <div className="p-6">
+                      <div className="p-4 sm:p-6">
                         {paginatedItems.length === 0 ? (
                           <div className="text-center py-12">
                             <svg className="w-16 h-16 text-brand-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4497,63 +4647,79 @@ export default function MyAccountPage() {
                         ) : (
                           <div className="space-y-4">
                             {paginatedItems.map((item) => (
-                              <div key={item.id} className="flex gap-4 p-4 border border-brand-gray-200 rounded-lg hover:border-brand-gray-300 transition-colors">
-                                {/* Product Image */}
-                                <Link href={`/product/${item.id}`} className="w-24 h-24 bg-brand-gray-100 rounded-lg flex-shrink-0 overflow-hidden group">
-                                  <Image
-                                    src={item.image}
-                                    alt={item.name}
-                                    width={96}
-                                    height={96}
-                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                  />
-                                </Link>
-
-                                {/* Product Info */}
-                                <div className="flex-1 min-w-0">
-                                  <Link href={`/product/${item.id}`} className="block">
-                                    <h4 className="text-base font-medium text-brand-black mb-1 hover:text-brand-blue-600 transition-colors">{item.name}</h4>
+                              <div key={item.id} className="flex flex-col sm:flex-row gap-3 sm:gap-4 p-3 sm:p-4 border border-brand-gray-200 rounded-lg hover:border-brand-gray-300 transition-colors">
+                                {/* Mobile: Image + Basic Info Row */}
+                                <div className="flex gap-3 sm:gap-4 flex-1">
+                                  {/* Product Image */}
+                                  <Link href={`/product/${item.id}`} className="w-20 h-20 sm:w-24 sm:h-24 bg-brand-gray-100 rounded-lg flex-shrink-0 overflow-hidden group">
+                                    <Image
+                                      src={item.image}
+                                      alt={item.name}
+                                      width={96}
+                                      height={96}
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                    />
                                   </Link>
-                                  <div className="flex flex-wrap items-center gap-2 text-sm text-brand-gray-600 mb-2">
-                                    {item.color && (
-                                      <span>Color: {item.color}</span>
-                                    )}
-                                    {item.selectedSize && (
-                                      <span>Size: {item.selectedSize}</span>
-                                    )}
-                                    {item.brand && (
-                                      <span className="text-brand-gray-500">• {item.brand}</span>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-3">
-                                    {item.inStock ? (
-                                      <span className="text-xs text-green-600 font-medium">In Stock</span>
-                                    ) : (
-                                      <span className="text-xs text-red-600 font-medium">Out of Stock</span>
-                                    )}
-                                    {item.storeAvailable && (
-                                      <span className="text-xs text-brand-blue-600 font-medium">Pickup Available</span>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-3 mt-2">
-                                    <button 
-                                      onClick={() => handleRemoveFromWishlist(item.id)}
-                                      className="text-sm text-brand-gray-500 hover:text-red-600 hover:underline transition-colors"
-                                    >
-                                      Remove
-                                    </button>
-                                    <span className="text-brand-gray-300">•</span>
-                                    <button
-                                      onClick={() => setQuickViewProduct(item)}
-                                      className="text-sm text-brand-gray-500 hover:text-brand-blue-600 hover:underline transition-colors"
-                                    >
-                                      Quick view
-                                    </button>
+
+                                  {/* Product Info */}
+                                  <div className="flex-1 min-w-0">
+                                    <Link href={`/product/${item.id}`} className="block">
+                                      <h4 className="text-sm sm:text-base font-medium text-brand-black mb-1 hover:text-brand-blue-600 transition-colors line-clamp-2">{item.name}</h4>
+                                    </Link>
+                                    
+                                    {/* Mobile: Price shown inline */}
+                                    <div className="sm:hidden mb-1.5">
+                                      {item.originalPrice && item.originalPrice > item.price ? (
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-base font-semibold text-brand-black">${item.price.toFixed(2)}</span>
+                                          <span className="text-xs text-brand-gray-400 line-through">${item.originalPrice.toFixed(2)}</span>
+                                        </div>
+                                      ) : (
+                                        <span className="text-base font-semibold text-brand-black">${item.price.toFixed(2)}</span>
+                                      )}
+                                    </div>
+                                    
+                                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-brand-gray-600 mb-1.5 sm:mb-2">
+                                      {/* Show selected color if available, otherwise show "Select" hint */}
+                                      {item.selectedColor ? (
+                                        <span>Color: {item.selectedColor}</span>
+                                      ) : item.colors && item.colors.length > 1 ? (
+                                        <span className="text-amber-600">Color: Select</span>
+                                      ) : item.color ? (
+                                        <span>Color: {item.color}</span>
+                                      ) : null}
+                                      {/* Show selected size if available, otherwise show "Select" hint */}
+                                      {item.selectedSize ? (
+                                        <span>Size: {item.selectedSize}</span>
+                                      ) : item.size && Array.isArray(item.size) && item.size.length > 1 ? (
+                                        <span className="text-amber-600">Size: Select</span>
+                                      ) : null}
+                                    </div>
+                                    <div className="flex items-center gap-2 sm:gap-3">
+                                      {item.inStock ? (
+                                        <span className="text-xs text-green-600 font-medium">In Stock</span>
+                                      ) : (
+                                        <span className="text-xs text-red-600 font-medium">Out of Stock</span>
+                                      )}
+                                      {item.storeAvailable && (
+                                        <span className="text-xs text-brand-blue-600 font-medium hidden sm:inline">Pickup Available</span>
+                                      )}
+                                    </div>
+                                    
+                                    {/* Remove button - visible on both mobile and desktop */}
+                                    <div className="mt-2">
+                                      <button 
+                                        onClick={() => handleRemoveFromWishlist(item.id)}
+                                        className="text-xs sm:text-sm text-brand-gray-500 hover:text-red-600 hover:underline transition-colors"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
                                   </div>
                                 </div>
 
-                                {/* Price and Actions */}
-                                <div className="flex flex-col items-end gap-3 flex-shrink-0">
+                                {/* Desktop: Price and Actions (hidden on mobile) */}
+                                <div className="hidden sm:flex flex-col items-end gap-3 flex-shrink-0">
                                   <div className="text-right">
                                     {item.originalPrice && item.originalPrice > item.price ? (
                                       <>
@@ -4568,15 +4734,42 @@ export default function MyAccountPage() {
                                     )}
                                   </div>
                                   <button
-                                    onClick={() => handleAddToCart(item, item.selectedSize, item.selectedColor)}
+                                    onClick={() => handleWishlistAddToCart(item)}
                                     disabled={!item.inStock}
-                                    className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors shadow-sm ${
-                                      item.inStock
-                                        ? 'bg-brand-blue-500 text-white hover:bg-brand-blue-600'
-                                        : 'bg-brand-gray-200 text-brand-gray-500 cursor-not-allowed'
+                                    className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors shadow-sm whitespace-nowrap ${
+                                      !item.inStock
+                                        ? 'bg-brand-gray-200 text-brand-gray-500 cursor-not-allowed'
+                                        : needsVariantSelection(item as WishlistProduct)
+                                          ? 'bg-white text-brand-black border border-brand-gray-200 hover:bg-brand-gray-50'
+                                          : 'bg-brand-blue-500 text-white hover:bg-brand-blue-600'
                                     }`}
                                   >
-                                    {item.inStock ? 'Add to cart' : 'Out of stock'}
+                                    {!item.inStock 
+                                      ? 'Out of stock' 
+                                      : needsVariantSelection(item as WishlistProduct)
+                                        ? 'Select options'
+                                        : 'Add to cart'}
+                                  </button>
+                                </div>
+
+                                {/* Mobile: Full-width Add to Cart button */}
+                                <div className="sm:hidden">
+                                  <button
+                                    onClick={() => handleWishlistAddToCart(item)}
+                                    disabled={!item.inStock}
+                                    className={`w-full px-4 py-2.5 text-sm font-medium rounded-lg transition-colors shadow-sm ${
+                                      !item.inStock
+                                        ? 'bg-brand-gray-200 text-brand-gray-500 cursor-not-allowed'
+                                        : needsVariantSelection(item as WishlistProduct)
+                                          ? 'bg-white text-brand-black border border-brand-gray-200 hover:bg-brand-gray-50'
+                                          : 'bg-brand-blue-500 text-white hover:bg-brand-blue-600'
+                                    }`}
+                                  >
+                                    {!item.inStock 
+                                      ? 'Out of stock' 
+                                      : needsVariantSelection(item as WishlistProduct)
+                                        ? 'Select options'
+                                        : 'Add to cart'}
                                   </button>
                                 </div>
                               </div>
@@ -4586,22 +4779,25 @@ export default function MyAccountPage() {
 
                         {/* Pagination */}
                         {totalPages > 1 && (
-                          <div className="flex items-center justify-between mt-6 pt-6 border-t border-brand-gray-200">
-                            <p className="text-sm text-brand-gray-600">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-6 pt-6 border-t border-brand-gray-200">
+                            <p className="text-xs sm:text-sm text-brand-gray-600 text-center sm:text-left">
                               Viewing {paginatedItems.length} of {filteredItems.length} items
                             </p>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center justify-center gap-2">
                               <button
                                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                                 disabled={currentPage === 1}
-                                className="px-4 py-2 bg-white border border-brand-gray-200 text-sm font-medium text-brand-black rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex-1 sm:flex-none px-4 py-2.5 sm:py-2 bg-white border border-brand-gray-200 text-sm font-medium text-brand-black rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 Previous
                               </button>
+                              <span className="text-sm text-brand-gray-600 px-2">
+                                {currentPage} / {totalPages}
+                              </span>
                               <button
                                 onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                                 disabled={currentPage === totalPages}
-                                className="px-4 py-2 bg-white border border-brand-gray-200 text-sm font-medium text-brand-black rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex-1 sm:flex-none px-4 py-2.5 sm:py-2 bg-white border border-brand-gray-200 text-sm font-medium text-brand-black rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 Next
                               </button>
@@ -5745,7 +5941,7 @@ export default function MyAccountPage() {
                     <input type="radio" name="return-method" value="store" className="text-brand-blue-500" />
                     <div>
                       <p className="text-sm font-medium text-brand-black">Return to store</p>
-                      <p className="text-xs text-brand-gray-600">Bring items to any Market Street location</p>
+                      <p className="text-xs text-brand-gray-600">Bring items to any Salesforce Foundations location</p>
                     </div>
                   </label>
                 </div>
@@ -5846,8 +6042,8 @@ export default function MyAccountPage() {
         </div>
       )}
 
-      {/* Rename Wishlist Modal */}
-      {showRenameWishlistModal && renamingWishlistId && (
+      {/* MULTI_WISHLIST_FEATURE: Rename Wishlist Modal - only shown when multiple wishlists enabled */}
+      {ENABLE_MULTIPLE_WISHLISTS && showRenameWishlistModal && renamingWishlistId && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowRenameWishlistModal(false)} />
           <div className="flex min-h-full items-center justify-center p-4">
@@ -5893,8 +6089,8 @@ export default function MyAccountPage() {
         </div>
       )}
 
-      {/* Share Wishlist Modal */}
-      {showShareWishlistModal && sharingWishlistId && (
+      {/* MULTI_WISHLIST_FEATURE: Share Wishlist Modal - only shown when multiple wishlists enabled */}
+      {ENABLE_MULTIPLE_WISHLISTS && showShareWishlistModal && sharingWishlistId && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowShareWishlistModal(false)} />
           <div className="flex min-h-full items-center justify-center p-4">
@@ -5967,197 +6163,556 @@ export default function MyAccountPage() {
       {/* Add Payment Method Modal */}
       {showPaymentModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowPaymentModal(false)} />
+          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => { setShowPaymentModal(false); setShowNewBillingAddress(false); setSelectedBillingAddressId(''); }} />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full p-6" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-semibold text-brand-black">Add Payment Method</h2>
+                <h2 className="text-xl font-semibold text-brand-black">Add Payment Method</h2>
                 <button
-                  onClick={() => setShowPaymentModal(false)}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                  onClick={() => { setShowPaymentModal(false); setShowNewBillingAddress(false); setSelectedBillingAddressId(''); }}
+                  className="p-2 text-brand-gray-400 hover:text-brand-black transition-colors"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
 
               {/* Modal Form */}
-              <div className="space-y-4">
-                {/* Payment Method Type */}
+              <div className="space-y-5">
+                {/* Payment Country Selector */}
                 <div>
-                  <label className="block text-sm font-medium text-brand-black mb-2">Payment Method Type</label>
+                  <label className="block text-sm font-medium text-brand-black mb-2">Payment Country</label>
                   <div className="relative">
                     <select
-                      value={paymentForm.type || 'visa'}
-                      onChange={(e) => setPaymentForm({ ...paymentForm, type: e.target.value as any })}
-                      className="w-full px-4 py-2 pr-10 border border-brand-gray-300 rounded-lg text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent appearance-none bg-white"
+                      value={paymentForm.selectedCountry || 'US'}
+                      onChange={(e) => {
+                        const newCountry = e.target.value as PaymentCountryCode
+                        setPaymentForm({ 
+                          ...paymentForm, 
+                          selectedCountry: newCountry,
+                          selectedMethodType: '', // Unselect both options when changing country
+                          type: undefined,
+                          cardholderName: '',
+                          cardNumber: '',
+                          last4: '',
+                          expiryMonth: undefined,
+                          expiryYear: undefined,
+                          bankName: '',
+                          iban: '',
+                          pixKey: '',
+                        })
+                      }}
+                      className="w-full px-4 py-3 pr-10 border border-brand-gray-300 rounded-lg text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent appearance-none bg-white"
                     >
-                      <option value="visa">Credit Card (Visa)</option>
-                      <option value="mastercard">Credit Card (Mastercard)</option>
-                      <option value="ach">Bank Account (ACH)</option>
+                      {PAYMENT_COUNTRIES.map((country) => (
+                        <option key={country.code} value={country.code}>
+                          {country.flag} {country.name}
+                        </option>
+                      ))}
                     </select>
                     <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                      <svg className="w-4 h-4 text-brand-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      <svg className="w-4 h-4 text-brand-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
                       </svg>
                     </div>
                   </div>
                 </div>
 
-                {/* Cardholder Name */}
-                <div>
-                  <label className="block text-sm font-medium text-brand-black mb-2">Cardholder Name</label>
-                  <input
-                    type="text"
-                    value={paymentForm.cardholderName || ''}
-                    onChange={(e) => setPaymentForm({ ...paymentForm, cardholderName: e.target.value })}
-                    className="w-full px-4 py-2 border border-brand-gray-300 rounded-lg text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent"
-                    placeholder="John Doe"
-                  />
+                {/* Credit Card Option */}
+                <div 
+                  className={`border rounded-lg transition-all ${
+                    paymentForm.selectedMethodType === 'credit-card' 
+                      ? 'border-brand-blue-500 bg-white' 
+                      : 'border-brand-gray-200 bg-white hover:border-brand-gray-300'
+                  }`}
+                >
+                  <label className="flex items-center gap-3 p-4 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      checked={paymentForm.selectedMethodType === 'credit-card'}
+                      onChange={() => setPaymentForm({ ...paymentForm, selectedMethodType: 'credit-card', type: 'visa' })}
+                      className="w-4 h-4 text-brand-blue-500 border-brand-gray-300 focus:ring-brand-blue-500"
+                    />
+                    <span className="text-sm font-medium text-brand-black">Credit Card</span>
+                    <div className="ml-auto">
+                      <svg className="w-8 h-6 text-brand-blue-500" viewBox="0 0 32 24" fill="none">
+                        <rect width="32" height="24" rx="4" fill="currentColor" fillOpacity="0.1"/>
+                        <rect x="4" y="8" width="8" height="6" rx="1" fill="currentColor"/>
+                        <rect x="4" y="16" width="12" height="2" rx="1" fill="currentColor" fillOpacity="0.5"/>
+                      </svg>
+                    </div>
+                  </label>
+                  
+                  {/* Credit Card Form - Expanded */}
+                  {paymentForm.selectedMethodType === 'credit-card' && (
+                    <div className="px-4 pb-4 space-y-3 border-t border-brand-gray-100 pt-3">
+                      <div>
+                        <input
+                          type="text"
+                          value={paymentForm.cardholderName || ''}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, cardholderName: e.target.value })}
+                          className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-brand-black text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent placeholder-brand-gray-400"
+                          placeholder="Name on Card*"
+                        />
+                      </div>
+                      <div>
+                        <input
+                          type="text"
+                          value={paymentForm.cardNumber || ''}
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/\D/g, '').slice(0, 16)
+                            setPaymentForm({ 
+                              ...paymentForm, 
+                              cardNumber: value,
+                              last4: value.slice(-4) 
+                            })
+                          }}
+                          className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-brand-black text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent placeholder-brand-gray-400"
+                          placeholder="Card Number*"
+                          maxLength={19}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={paymentForm.expiryMonth && paymentForm.expiryYear 
+                              ? `${String(paymentForm.expiryMonth).padStart(2, '0')}/${String(paymentForm.expiryYear).slice(-2)}`
+                              : ''
+                            }
+                            onChange={(e) => {
+                              const value = e.target.value.replace(/\D/g, '')
+                              if (value.length >= 2) {
+                                const month = parseInt(value.slice(0, 2))
+                                const year = value.length >= 4 ? 2000 + parseInt(value.slice(2, 4)) : undefined
+                                setPaymentForm({ 
+                                  ...paymentForm, 
+                                  expiryMonth: month <= 12 ? month : 12,
+                                  expiryYear: year
+                                })
+                              }
+                            }}
+                            className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-brand-black text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent placeholder-brand-gray-400"
+                            placeholder="mm/yy*"
+                            maxLength={5}
+                          />
+                        </div>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                            <svg className="w-4 h-4 text-brand-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                              <circle cx="12" cy="12" r="10" strokeWidth="2"/>
+                              <path d="M12 6v6l4 2" strokeWidth="2" strokeLinecap="round"/>
+                            </svg>
+                          </div>
+                          <input
+                            type="text"
+                            className="w-full pl-9 pr-3 py-2 border border-brand-gray-300 rounded-lg text-brand-black text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent placeholder-brand-gray-400"
+                            placeholder="CVV*"
+                            maxLength={4}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 pt-1">
+                        <input
+                          type="checkbox"
+                          id="save-default-card"
+                          checked={paymentForm.isDefault || false}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, isDefault: e.target.checked })}
+                          className="w-4 h-4 text-brand-blue-500 border-brand-gray-300 rounded focus:ring-brand-blue-500"
+                        />
+                        <label htmlFor="save-default-card" className="text-sm text-brand-black cursor-pointer">
+                          Save as default payment
+                        </label>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* Card Number (for credit cards) */}
-                {(paymentForm.type === 'visa' || paymentForm.type === 'mastercard') && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-brand-black mb-2">Card Number</label>
+                {/* Regional Payment Method Option */}
+                {(() => {
+                  const country = paymentForm.selectedCountry || 'US'
+                  const regionalMethods = PAYMENT_METHODS_BY_COUNTRY[country]
+                  const regionalMethod = regionalMethods.find(m => m.type !== 'credit-card')
+                  
+                  if (!regionalMethod) return null
+                  
+                  return (
+                    <div 
+                      className={`border rounded-lg transition-all ${
+                        paymentForm.selectedMethodType === regionalMethod.type 
+                          ? 'border-brand-blue-500 bg-white' 
+                          : 'border-brand-gray-200 bg-white hover:border-brand-gray-300'
+                      }`}
+                    >
+                      <label className="flex items-center gap-3 p-4 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="paymentMethod"
+                          checked={paymentForm.selectedMethodType === regionalMethod.type}
+                          onChange={() => setPaymentForm({ 
+                            ...paymentForm, 
+                            selectedMethodType: regionalMethod.type,
+                            type: regionalMethod.type as any
+                          })}
+                          className="w-4 h-4 text-brand-blue-500 border-brand-gray-300 focus:ring-brand-blue-500"
+                        />
+                        <span className="text-sm font-medium text-brand-black">{regionalMethod.name}</span>
+                        <div className="ml-auto">
+                          {regionalMethod.icon === 'bank' && (
+                            <svg className="w-8 h-6 text-brand-blue-500" viewBox="0 0 32 24" fill="none">
+                              <rect width="32" height="24" rx="4" fill="currentColor" fillOpacity="0.1"/>
+                              <path d="M16 6L6 11V13H26V11L16 6Z" fill="currentColor"/>
+                              <rect x="8" y="14" width="3" height="5" fill="currentColor"/>
+                              <rect x="14.5" y="14" width="3" height="5" fill="currentColor"/>
+                              <rect x="21" y="14" width="3" height="5" fill="currentColor"/>
+                              <rect x="6" y="19" width="20" height="2" fill="currentColor"/>
+                            </svg>
+                          )}
+                          {regionalMethod.icon === 'pix' && (
+                            <svg className="w-8 h-6 text-brand-teal-500" viewBox="0 0 32 24" fill="none">
+                              <rect width="32" height="24" rx="4" fill="#00B8A9" fillOpacity="0.1"/>
+                              <path d="M16 4L20 8L16 12L12 8L16 4Z" fill="#00B8A9"/>
+                              <path d="M16 12L20 16L16 20L12 16L16 12Z" fill="#00B8A9"/>
+                              <path d="M10 10L14 14L10 18L6 14L10 10Z" fill="#00B8A9"/>
+                              <path d="M22 10L26 14L22 18L18 14L22 10Z" fill="#00B8A9"/>
+                            </svg>
+                          )}
+                        </div>
+                      </label>
+
+                      {/* Regional Method Form - Expanded */}
+                      {paymentForm.selectedMethodType === regionalMethod.type && (
+                        <div className="px-4 pb-4 space-y-3 border-t border-brand-gray-100 pt-3">
+                          {regionalMethod.type === 'ach' && (
+                            <>
+                              <div>
+                                <input
+                                  type="text"
+                                  value={paymentForm.cardholderName || ''}
+                                  onChange={(e) => setPaymentForm({ ...paymentForm, cardholderName: e.target.value })}
+                                  className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-brand-black text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent placeholder-brand-gray-400"
+                                  placeholder="Account Holder Name*"
+                                />
+                              </div>
+                              <div>
+                                <input
+                                  type="text"
+                                  value={paymentForm.bankName || ''}
+                                  onChange={(e) => setPaymentForm({ ...paymentForm, bankName: e.target.value })}
+                                  className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-brand-black text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent placeholder-brand-gray-400"
+                                  placeholder="Bank Name*"
+                                />
+                              </div>
+                              <div className="grid grid-cols-2 gap-3">
+                                <input
+                                  type="text"
+                                  className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-brand-black text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent placeholder-brand-gray-400"
+                                  placeholder="Routing Number*"
+                                />
+                                <input
+                                  type="text"
+                                  className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-brand-black text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent placeholder-brand-gray-400"
+                                  placeholder="Account Number*"
+                                />
+                              </div>
+                            </>
+                          )}
+                          {regionalMethod.type === 'sepa' && (
+                            <>
+                              <div>
+                                <input
+                                  type="text"
+                                  value={paymentForm.cardholderName || ''}
+                                  onChange={(e) => setPaymentForm({ ...paymentForm, cardholderName: e.target.value })}
+                                  className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-brand-black text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent placeholder-brand-gray-400"
+                                  placeholder="Account Holder Name*"
+                                />
+                              </div>
+                              <div>
+                                <input
+                                  type="text"
+                                  value={paymentForm.iban || ''}
+                                  onChange={(e) => setPaymentForm({ ...paymentForm, iban: e.target.value.toUpperCase() })}
+                                  className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-brand-black text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent placeholder-brand-gray-400 font-mono"
+                                  placeholder="IBAN*"
+                                  maxLength={34}
+                                />
+                              </div>
+                            </>
+                          )}
+                          {regionalMethod.type === 'pix' && (
+                            <>
+                              <div>
+                                <input
+                                  type="text"
+                                  value={paymentForm.cardholderName || ''}
+                                  onChange={(e) => setPaymentForm({ ...paymentForm, cardholderName: e.target.value })}
+                                  className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-brand-black text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent placeholder-brand-gray-400"
+                                  placeholder="Account Holder Name*"
+                                />
+                              </div>
+                              <div>
+                                <input
+                                  type="text"
+                                  value={paymentForm.pixKey || ''}
+                                  onChange={(e) => setPaymentForm({ ...paymentForm, pixKey: e.target.value })}
+                                  className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-brand-black text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent placeholder-brand-gray-400"
+                                  placeholder="PIX Key (CPF, Email, Phone, or Random)*"
+                                />
+                              </div>
+                            </>
+                          )}
+                          <div className="flex items-center gap-2 pt-1">
+                            <input
+                              type="checkbox"
+                              id="save-default-regional"
+                              checked={paymentForm.isDefault || false}
+                              onChange={(e) => setPaymentForm({ ...paymentForm, isDefault: e.target.checked })}
+                              className="w-4 h-4 text-brand-blue-500 border-brand-gray-300 rounded focus:ring-brand-blue-500"
+                            />
+                            <label htmlFor="save-default-regional" className="text-sm text-brand-black cursor-pointer">
+                              Save as default payment
+                            </label>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
+
+                {/* Billing Address */}
+                <div className="pt-2">
+                  <label className="block text-sm font-medium text-brand-black mb-2">Billing Address*</label>
+                  
+                  {/* Existing Address Selector */}
+                  <div className="relative">
+                    <select
+                      value={selectedBillingAddressId}
+                      className={`w-full px-4 py-3 pr-10 border border-brand-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent appearance-none bg-white ${
+                        selectedBillingAddressId ? 'text-brand-black' : 'text-brand-gray-400'
+                      }`}
+                      onChange={(e) => {
+                        setSelectedBillingAddressId(e.target.value)
+                        // If user selects an existing address, collapse the new address form
+                        if (e.target.value) {
+                          setShowNewBillingAddress(false)
+                          setNewBillingAddress({
+                            firstName: '',
+                            lastName: '',
+                            addressLine1: '',
+                            addressLine2: '',
+                            city: '',
+                            state: '',
+                            zipCode: '',
+                          })
+                        }
+                      }}
+                    >
+                      <option value="" disabled>Select an Address</option>
+                      {addresses.map((addr) => (
+                        <option key={addr.id} value={addr.id}>
+                          {addr.firstName} {addr.lastName} - {addr.addressLine1}, {addr.city}...
+                        </option>
+                      ))}
+                    </select>
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                      <svg className="w-4 h-4 text-brand-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+                      </svg>
+                    </div>
+                  </div>
+                  
+                  <button 
+                    onClick={() => {
+                      const newState = !showNewBillingAddress
+                      setShowNewBillingAddress(newState)
+                      // Reset the dropdown when opening new address form
+                      if (newState) {
+                        setSelectedBillingAddressId('')
+                      }
+                    }}
+                    className="flex items-center gap-1 mt-2 text-sm text-brand-blue-500 hover:text-brand-blue-600 font-medium"
+                  >
+                    {showNewBillingAddress ? (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                        Cancel
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                        Add New Address
+                      </>
+                    )}
+                  </button>
+
+                  {/* New Billing Address Form */}
+                  {showNewBillingAddress && (
+                    <div className="mt-4 space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <input
+                          type="text"
+                          value={newBillingAddress.firstName}
+                          onChange={(e) => setNewBillingAddress({ ...newBillingAddress, firstName: e.target.value })}
+                          className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-brand-black text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent placeholder-brand-gray-400"
+                          placeholder="First Name"
+                        />
+                        <input
+                          type="text"
+                          value={newBillingAddress.lastName}
+                          onChange={(e) => setNewBillingAddress({ ...newBillingAddress, lastName: e.target.value })}
+                          className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-brand-black text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent placeholder-brand-gray-400"
+                          placeholder="Last Name"
+                        />
+                      </div>
                       <input
                         type="text"
-                        value={paymentForm.last4 || ''}
-                        onChange={(e) => {
-                          const value = e.target.value.replace(/\D/g, '').slice(0, 16)
-                          setPaymentForm({ ...paymentForm, last4: value.slice(-4) })
-                        }}
-                        className="w-full px-4 py-2 border border-brand-gray-300 rounded-lg text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent"
-                        placeholder="1234 5678 9012 3456"
-                        maxLength={16}
+                        value={newBillingAddress.addressLine1}
+                        onChange={(e) => setNewBillingAddress({ ...newBillingAddress, addressLine1: e.target.value })}
+                        className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-brand-black text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent placeholder-brand-gray-400"
+                        placeholder="Address Line 1"
                       />
-                    </div>
-
-                    {/* Expiry Date */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-brand-black mb-2">Expiry Month</label>
+                      <input
+                        type="text"
+                        value={newBillingAddress.addressLine2}
+                        onChange={(e) => setNewBillingAddress({ ...newBillingAddress, addressLine2: e.target.value })}
+                        className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-brand-black text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent placeholder-brand-gray-400"
+                        placeholder="Address Line 2"
+                      />
+                      <div className="grid grid-cols-3 gap-3">
+                        <input
+                          type="text"
+                          value={newBillingAddress.zipCode}
+                          onChange={(e) => setNewBillingAddress({ ...newBillingAddress, zipCode: e.target.value })}
+                          className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-brand-black text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent placeholder-brand-gray-400"
+                          placeholder="Zip Code"
+                        />
+                        <input
+                          type="text"
+                          value={newBillingAddress.city}
+                          onChange={(e) => setNewBillingAddress({ ...newBillingAddress, city: e.target.value })}
+                          className="w-full px-3 py-2 border border-brand-gray-300 rounded-lg text-brand-black text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent placeholder-brand-gray-400"
+                          placeholder="City"
+                        />
                         <div className="relative">
                           <select
-                            value={paymentForm.expiryMonth || ''}
-                            onChange={(e) => setPaymentForm({ ...paymentForm, expiryMonth: parseInt(e.target.value) })}
-                            className="w-full px-4 py-2 pr-10 border border-brand-gray-300 rounded-lg text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent appearance-none bg-white"
+                            value={newBillingAddress.state}
+                            onChange={(e) => setNewBillingAddress({ ...newBillingAddress, state: e.target.value })}
+                            className="w-full px-3 py-2 pr-8 border border-brand-gray-300 rounded-lg text-brand-black text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent appearance-none bg-white"
                           >
-                            <option value="">Month</option>
-                            {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
-                              <option key={month} value={month}>
-                                {String(month).padStart(2, '0')}
-                              </option>
-                            ))}
+                            <option value="">UF</option>
+                            <option value="CA">CA</option>
+                            <option value="NY">NY</option>
+                            <option value="TX">TX</option>
+                            <option value="FL">FL</option>
+                            <option value="IL">IL</option>
+                            <option value="PA">PA</option>
+                            <option value="OH">OH</option>
+                            <option value="GA">GA</option>
+                            <option value="NC">NC</option>
+                            <option value="MI">MI</option>
                           </select>
-                          <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                            <svg className="w-4 h-4 text-brand-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                            <svg className="w-4 h-4 text-brand-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                             </svg>
                           </div>
                         </div>
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-brand-black mb-2">Expiry Year</label>
-                        <div className="relative">
-                          <select
-                            value={paymentForm.expiryYear || ''}
-                            onChange={(e) => setPaymentForm({ ...paymentForm, expiryYear: parseInt(e.target.value) })}
-                            className="w-full px-4 py-2 pr-10 border border-brand-gray-300 rounded-lg text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent appearance-none bg-white"
-                          >
-                            <option value="">Year</option>
-                          {Array.from({ length: 15 }, (_, i) => new Date().getFullYear() + i).map((year) => (
-                            <option key={year} value={year}>
-                              {year}
-                            </option>
-                          ))}
-                          </select>
-                          <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                            <svg className="w-4 h-4 text-brand-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </div>
-                        </div>
-                      </div>
                     </div>
-                  </>
-                )}
-
-                {/* Bank Name (for ACH) */}
-                {paymentForm.type === 'ach' && (
-                  <div>
-                    <label className="block text-sm font-medium text-brand-black mb-2">Bank Name</label>
-                    <input
-                      type="text"
-                      value={paymentForm.bankName || ''}
-                      onChange={(e) => setPaymentForm({ ...paymentForm, bankName: e.target.value })}
-                      className="w-full px-4 py-2 border border-brand-gray-300 rounded-lg text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent"
-                      placeholder="Bank Account Name"
-                    />
-                  </div>
-                )}
-
-                {/* Set as Default */}
-                <div className="flex items-center gap-3 p-4 bg-brand-gray-50 rounded-lg">
-                  <input
-                    type="checkbox"
-                    id="set-default"
-                    checked={paymentForm.isDefault || false}
-                    onChange={(e) => setPaymentForm({ ...paymentForm, isDefault: e.target.checked })}
-                    className="w-5 h-5 text-brand-blue-500 border-brand-gray-300 rounded focus:ring-brand-blue-500"
-                  />
-                  <label htmlFor="set-default" className="text-sm text-brand-black cursor-pointer">
-                    Set as default payment method
-                  </label>
+                  )}
                 </div>
               </div>
 
               {/* Modal Footer */}
               <div className="flex items-center justify-end gap-3 mt-6 pt-6 border-t border-brand-gray-200">
                 <button
-                  onClick={() => setShowPaymentModal(false)}
-                  className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
+                  onClick={() => { setShowPaymentModal(false); setShowNewBillingAddress(false); setSelectedBillingAddressId(''); }}
+                  className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => {
-                    // Validate form
+                    // Validate that a payment method is selected
+                    if (!paymentForm.selectedMethodType) {
+                      alert('Please select a payment method')
+                      return
+                    }
+                    
+                    // Validate form based on selected method
                     if (!paymentForm.cardholderName) {
-                      alert('Please enter cardholder name')
+                      alert('Please enter account holder name')
                       return
                     }
-                    if ((paymentForm.type === 'visa' || paymentForm.type === 'mastercard') && !paymentForm.last4) {
-                      alert('Please enter card number')
-                      return
+                    
+                    if (paymentForm.selectedMethodType === 'credit-card') {
+                      if (!paymentForm.cardNumber || paymentForm.cardNumber.length < 13) {
+                        alert('Please enter a valid card number')
+                        return
+                      }
+                      if (!paymentForm.expiryMonth || !paymentForm.expiryYear) {
+                        alert('Please enter expiry date')
+                        return
+                      }
                     }
-                    if ((paymentForm.type === 'visa' || paymentForm.type === 'mastercard') && (!paymentForm.expiryMonth || !paymentForm.expiryYear)) {
-                      alert('Please enter expiry date')
-                      return
-                    }
-                    if (paymentForm.type === 'ach' && !paymentForm.bankName) {
+                    
+                    if (paymentForm.selectedMethodType === 'ach' && !paymentForm.bankName) {
                       alert('Please enter bank name')
                       return
+                    }
+                    
+                    if (paymentForm.selectedMethodType === 'sepa' && !paymentForm.iban) {
+                      alert('Please enter IBAN')
+                      return
+                    }
+                    
+                    if (paymentForm.selectedMethodType === 'pix' && !paymentForm.pixKey) {
+                      alert('Please enter PIX key')
+                      return
+                    }
+
+                    // Determine the type based on selected method
+                    let paymentType: PaymentMethod['type'] = 'visa'
+                    if (paymentForm.selectedMethodType === 'credit-card') {
+                      paymentType = 'visa'
+                    } else if (paymentForm.selectedMethodType === 'ach') {
+                      paymentType = 'ach'
+                    } else if (paymentForm.selectedMethodType === 'sepa') {
+                      paymentType = 'sepa'
+                    } else if (paymentForm.selectedMethodType === 'pix') {
+                      paymentType = 'pix'
                     }
 
                     // Add new payment method
                     const newPaymentMethod: PaymentMethod = {
-                      id: `${paymentForm.type}-${Date.now()}`,
-                      type: paymentForm.type as 'visa' | 'mastercard' | 'ach',
+                      id: `${paymentType}-${Date.now()}`,
+                      type: paymentType,
                       cardholderName: paymentForm.cardholderName || '',
                       isDefault: paymentForm.isDefault || false,
                       isSelected: false,
-                      ...(paymentForm.type === 'ach' 
-                        ? { bankName: paymentForm.bankName || '' }
-                        : {
-                            last4: paymentForm.last4 || '',
-                            expiryMonth: paymentForm.expiryMonth,
-                            expiryYear: paymentForm.expiryYear,
-                          }
-                      ),
+                      country: paymentForm.selectedCountry,
+                      ...(paymentForm.selectedMethodType === 'credit-card' && {
+                        last4: paymentForm.last4 || '',
+                        expiryMonth: paymentForm.expiryMonth,
+                        expiryYear: paymentForm.expiryYear,
+                      }),
+                      ...(paymentForm.selectedMethodType === 'ach' && {
+                        bankName: paymentForm.bankName || '',
+                      }),
+                      ...(paymentForm.selectedMethodType === 'sepa' && {
+                        iban: paymentForm.iban || '',
+                      }),
+                      ...(paymentForm.selectedMethodType === 'pix' && {
+                        pixKey: paymentForm.pixKey || '',
+                      }),
                     }
 
                     // If setting as default, unset other defaults
@@ -6167,18 +6722,37 @@ export default function MyAccountPage() {
 
                     setPaymentMethods([...paymentMethods, newPaymentMethod])
                     setShowPaymentModal(false)
+                    setShowNewBillingAddress(false)
+                    setSelectedBillingAddressId('')
+                    setNewBillingAddress({
+                      firstName: '',
+                      lastName: '',
+                      addressLine1: '',
+                      addressLine2: '',
+                      city: '',
+                      state: '',
+                      zipCode: '',
+                    })
                     setPaymentForm({
                       type: 'visa',
                       cardholderName: '',
+                      cardNumber: '',
                       last4: '',
                       expiryMonth: undefined,
                       expiryYear: undefined,
                       bankName: '',
+                      selectedCountry: 'US',
+                      selectedMethodType: '',
+                      iban: '',
+                      pixKey: '',
                     })
+                    
+                    // Show success toast
+                    showToastMessage('Payment method added successfully')
                   }}
-                  className="px-4 py-2 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm"
+                  className="px-4 py-2 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors"
                 >
-                  Add Payment Method
+                  Save
                 </button>
               </div>
             </div>
@@ -6535,11 +7109,11 @@ export default function MyAccountPage() {
       {quickViewProduct && (
         <QuickViewModal
           product={quickViewProduct}
-          allProducts={allProducts}
+          productVariants={[]}
           isOpen={!!quickViewProduct}
           onClose={() => setQuickViewProduct(null)}
-          onAddToCart={(product, size, color) => {
-            addToCart(product, 1, size, color)
+          onAddToCart={(product, quantity, size, color) => {
+            addToCart(product, quantity, size, color)
             showToastMessage(`${product.name} added to cart`, 'success')
           }}
           onAddToWishlist={handleCuratedAddToWishlist}

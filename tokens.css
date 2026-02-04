@@ -1,0 +1,359 @@
+@import "tw-animate-css";
+/*---break---*/
+@custom-variant dark (&:is(.dark *));
+/*---break---*/
+@theme inline {
+  /* -- Border Radius Tokens -- */
+  /* Standard (matches reference) */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  /* Extensions (actively used) */
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-full: 9999px;
+  /* Component-specific (actively used) */
+  --radius-button: var(--radius-lg);
+  --radius-card: var(--radius-xl);
+  --radius-modal: var(--radius-2xl);
+  --radius-input: var(--radius-lg);
+
+  /* -- Core Semantic Colors -- */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* -- Status Colors -- */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-error: var(--error);
+  --color-error-foreground: var(--error-foreground);
+
+  /* -- Brand Blue Palette -- */
+  --color-brand-blue-50: var(--brand-blue-50);
+  --color-brand-blue-100: var(--brand-blue-100);
+  --color-brand-blue-200: var(--brand-blue-200);
+  --color-brand-blue-300: var(--brand-blue-300);
+  --color-brand-blue-400: var(--brand-blue-400);
+  --color-brand-blue-500: var(--brand-blue-500);
+  --color-brand-blue-600: var(--brand-blue-600);
+  --color-brand-blue-700: var(--brand-blue-700);
+  --color-brand-blue-800: var(--brand-blue-800);
+  --color-brand-blue-900: var(--brand-blue-900);
+
+  /* -- Brand Gray Palette -- */
+  --color-brand-gray-50: var(--brand-gray-50);
+  --color-brand-gray-100: var(--brand-gray-100);
+  --color-brand-gray-200: var(--brand-gray-200);
+  --color-brand-gray-300: var(--brand-gray-300);
+  --color-brand-gray-400: var(--brand-gray-400);
+  --color-brand-gray-500: var(--brand-gray-500);
+  --color-brand-gray-600: var(--brand-gray-600);
+  --color-brand-gray-700: var(--brand-gray-700);
+  --color-brand-gray-800: var(--brand-gray-800);
+  --color-brand-gray-900: var(--brand-gray-900);
+
+  /* -- Brand Core Colors -- */
+  --color-brand-black: var(--brand-black);
+  --color-brand-white: var(--brand-white);
+
+  /* -- Payment Brand Colors -- */
+  --color-payment-paypal-blue: var(--payment-paypal-blue);
+  --color-payment-paypal-yellow: var(--payment-paypal-yellow);
+  --color-payment-paypal-dark: var(--payment-paypal-dark);
+  --color-payment-venmo-blue: var(--payment-venmo-blue);
+  --color-payment-visa-blue: var(--payment-visa-blue);
+  --color-payment-mastercard-red: var(--payment-mastercard-red);
+  --color-payment-mastercard-orange: var(--payment-mastercard-orange);
+  --color-payment-amex-blue: var(--payment-amex-blue);
+  --color-payment-amazon-gray: var(--payment-amazon-gray);
+  --color-payment-applepay-black: var(--payment-applepay-black);
+  --color-payment-googlepay-gray: var(--payment-googlepay-gray);
+
+  /* -- Product Badge Colors -- */
+  --color-badge-new: var(--badge-new);
+  --color-badge-new-foreground: var(--badge-new-foreground);
+  --color-badge-bestseller: var(--badge-bestseller);
+  --color-badge-bestseller-foreground: var(--badge-bestseller-foreground);
+  --color-badge-online-only: var(--badge-online-only);
+  --color-badge-online-only-foreground: var(--badge-online-only-foreground);
+  --color-badge-limited: var(--badge-limited);
+  --color-badge-limited-foreground: var(--badge-limited-foreground);
+  --color-badge-sale: var(--badge-sale);
+  --color-badge-sale-foreground: var(--badge-sale-foreground);
+  --color-badge-out-of-stock: var(--badge-out-of-stock);
+  --color-badge-out-of-stock-foreground: var(--badge-out-of-stock-foreground);
+
+  /* -- Loyalty Badge Colors -- */
+  --color-loyalty-platinum: var(--loyalty-platinum);
+  --color-loyalty-gold: var(--loyalty-gold);
+  --color-loyalty-silver: var(--loyalty-silver);
+  --color-loyalty-bronze: var(--loyalty-bronze);
+
+  /* -- Chart Colors (for future use) -- */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* -- Sidebar Colors (for future use) -- */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/*---break---*/
+:root {
+  --radius: 0.625rem;
+
+  /* -- Core Semantic Colors -- */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.13 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.13 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.13 0 0);
+  --primary: oklch(0.59 0.2 264);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.96 0 0);
+  --secondary-foreground: oklch(0.13 0 0);
+  --muted: oklch(0.96 0 0);
+  --muted-foreground: oklch(0.45 0 0);
+  --accent: oklch(0.96 0 0);
+  --accent-foreground: oklch(0.13 0 0);
+  --destructive: oklch(0.55 0.22 27);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.91 0 0);
+  --input: oklch(0.91 0 0);
+  --ring: oklch(0.59 0.2 264);
+
+  /* -- Status Colors -- */
+  --success: oklch(0.55 0.16 145);
+  --success-foreground: oklch(1 0 0);
+  --warning: oklch(0.75 0.15 85);
+  --warning-foreground: oklch(0.25 0 0);
+  --info: oklch(0.59 0.2 264);
+  --info-foreground: oklch(1 0 0);
+  --error: oklch(0.55 0.22 27);
+  --error-foreground: oklch(1 0 0);
+
+  /* -- Brand Blue Palette -- */
+  --brand-blue-50: oklch(0.97 0.02 264);
+  --brand-blue-100: oklch(0.93 0.04 264);
+  --brand-blue-200: oklch(0.88 0.08 264);
+  --brand-blue-300: oklch(0.78 0.12 264);
+  --brand-blue-400: oklch(0.68 0.16 264);
+  --brand-blue-500: oklch(0.59 0.2 264);
+  --brand-blue-600: oklch(0.52 0.2 264);
+  --brand-blue-700: oklch(0.46 0.18 264);
+  --brand-blue-800: oklch(0.42 0.16 264);
+  --brand-blue-900: oklch(0.38 0.14 264);
+
+  /* -- Brand Gray Palette -- */
+  --brand-gray-50: oklch(0.98 0 0);
+  --brand-gray-100: oklch(0.96 0 0);
+  --brand-gray-200: oklch(0.93 0 0);
+  --brand-gray-300: oklch(0.88 0 0);
+  --brand-gray-400: oklch(0.74 0 0);
+  --brand-gray-500: oklch(0.62 0 0);
+  --brand-gray-600: oklch(0.46 0 0);
+  --brand-gray-700: oklch(0.38 0 0);
+  --brand-gray-800: oklch(0.26 0 0);
+  --brand-gray-900: oklch(0.13 0 0);
+
+  /* -- Brand Core Colors -- */
+  --brand-black: oklch(0 0 0);
+  --brand-white: oklch(1 0 0);
+
+  /* -- Payment Brand Colors -- */
+  --payment-paypal-blue: oklch(0.52 0.12 250);
+  --payment-paypal-yellow: oklch(0.87 0.15 90);
+  --payment-paypal-dark: oklch(0.35 0.1 250);
+  --payment-venmo-blue: oklch(0.55 0.18 250);
+  --payment-visa-blue: oklch(0.35 0.15 265);
+  --payment-mastercard-red: oklch(0.55 0.22 27);
+  --payment-mastercard-orange: oklch(0.75 0.18 65);
+  --payment-amex-blue: oklch(0.45 0.12 250);
+  --payment-amazon-gray: oklch(0.95 0 0);
+  --payment-applepay-black: oklch(0 0 0);
+  --payment-googlepay-gray: oklch(0.96 0 0);
+
+  /* -- Product Badge Colors -- */
+  --badge-new: oklch(0.55 0.16 145);
+  --badge-new-foreground: oklch(1 0 0);
+  --badge-bestseller: oklch(0.59 0.2 264);
+  --badge-bestseller-foreground: oklch(1 0 0);
+  --badge-online-only: oklch(0.55 0.2 300);
+  --badge-online-only-foreground: oklch(1 0 0);
+  --badge-limited: oklch(0.65 0.18 50);
+  --badge-limited-foreground: oklch(1 0 0);
+  --badge-sale: oklch(0.59 0.2 264);
+  --badge-sale-foreground: oklch(1 0 0);
+  --badge-out-of-stock: oklch(0.55 0.22 27);
+  --badge-out-of-stock-foreground: oklch(1 0 0);
+
+  /* -- Loyalty Badge Colors -- */
+  --loyalty-platinum: oklch(0.55 0.2 300);
+  --loyalty-gold: oklch(0.75 0.15 85);
+  --loyalty-silver: oklch(0.62 0 0);
+  --loyalty-bronze: oklch(0.65 0.18 50);
+
+  /* -- Chart Colors (monochromatic) -- */
+  --chart-1: oklch(0.13 0 0);
+  --chart-2: oklch(0.26 0 0);
+  --chart-3: oklch(0.38 0 0);
+  --chart-4: oklch(0.52 0 0);
+  --chart-5: oklch(0.62 0 0);
+
+  /* -- Sidebar Colors (for future use) -- */
+  --sidebar: oklch(0.98 0 0);
+  --sidebar-foreground: oklch(0.13 0 0);
+  --sidebar-primary: oklch(0.59 0.2 264);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.96 0 0);
+  --sidebar-accent-foreground: oklch(0.13 0 0);
+  --sidebar-border: oklch(0.91 0 0);
+  --sidebar-ring: oklch(0.59 0.2 264);
+
+  /* -- Shadow Tokens -- */
+  /* Base scale only (component-specific shadows removed - use base shadows directly) */
+  --shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 5%);
+  --shadow-sm: 0 1px 3px 0 oklch(0 0 0 / 10%), 0 1px 2px -1px oklch(0 0 0 / 10%);
+  --shadow-md: 0 4px 6px -1px oklch(0 0 0 / 10%), 0 2px 4px -2px oklch(0 0 0 / 10%);
+  --shadow-lg: 0 10px 15px -3px oklch(0 0 0 / 10%), 0 4px 6px -4px oklch(0 0 0 / 10%);
+  --shadow-xl: 0 20px 25px -5px oklch(0 0 0 / 10%), 0 8px 10px -6px oklch(0 0 0 / 10%);
+  --shadow-2xl: 0 25px 50px -12px oklch(0 0 0 / 25%);
+
+  /* -- Z-Index Scale -- */
+  --z-dropdown: 50;
+  --z-sticky: 100;
+  --z-fixed: 200;
+  --z-modal-backdrop: 400;
+  --z-modal: 500;
+  --z-popover: 600;
+  --z-tooltip: 700;
+  --z-toast: 800;
+
+  /* -- Opacity Tokens -- */
+  --opacity-backdrop: 0.5;
+  --opacity-disabled: 0.5;
+
+  /* -- Transition/Duration Tokens -- */
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+  --duration-slower: 500ms;
+  --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  /* -- Component Spacing Tokens -- */
+  --spacing-modal-padding: 1rem;
+  --spacing-card-padding: 1rem;
+  --spacing-section-gap: 2rem;
+  --spacing-input-x: 1rem;
+  --spacing-input-y: 0.75rem;
+  --spacing-button-x: 1.5rem;
+  --spacing-button-y: 0.75rem;
+}
+
+/*---break---*/
+.dark {
+  --background: oklch(0.07 0 0);
+  --foreground: oklch(0.98 0 0);
+  --card: oklch(0.14 0 0);
+  --card-foreground: oklch(0.98 0 0);
+  --popover: oklch(0.14 0 0);
+  --popover-foreground: oklch(0.98 0 0);
+  --primary: oklch(0.98 0 0);
+  --primary-foreground: oklch(0 0 0);
+  --secondary: oklch(0.20 0 0);
+  --secondary-foreground: oklch(0.98 0 0);
+  --muted: oklch(0.20 0 0);
+  --muted-foreground: oklch(0.62 0 0);
+  --accent: oklch(0.20 0 0);
+  --accent-foreground: oklch(0.98 0 0);
+  --destructive: oklch(0.62 0 0);
+  --destructive-foreground: oklch(0 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.62 0 0);
+
+  /* -- Status Colors (dark mode) -- */
+  --success: oklch(0.55 0.16 145);
+  --success-foreground: oklch(1 0 0);
+  --warning: oklch(0.75 0.15 85);
+  --warning-foreground: oklch(0 0 0);
+  --info: oklch(0.59 0.2 264);
+  --info-foreground: oklch(1 0 0);
+  --error: oklch(0.55 0.22 27);
+  --error-foreground: oklch(1 0 0);
+
+  /* -- Chart Colors (monochromatic inverted) -- */
+  --chart-1: oklch(0.98 0 0);
+  --chart-2: oklch(0.85 0 0);
+  --chart-3: oklch(0.65 0 0);
+  --chart-4: oklch(0.45 0 0);
+  --chart-5: oklch(0.25 0 0);
+
+  /* -- Sidebar Colors (dark mode) -- */
+  --sidebar: oklch(0.14 0 0);
+  --sidebar-foreground: oklch(0.98 0 0);
+  --sidebar-primary: oklch(0.98 0 0);
+  --sidebar-primary-foreground: oklch(0 0 0);
+  --sidebar-accent: oklch(0.20 0 0);
+  --sidebar-accent-foreground: oklch(0.98 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.62 0 0);
+
+  /* -- Brand Colors (same in dark mode) -- */
+  --brand-black: oklch(0 0 0);
+  --brand-white: oklch(1 0 0);
+  --brand-gray-50: oklch(0.98 0 0);
+  --brand-gray-100: oklch(0.96 0 0);
+  --brand-gray-200: oklch(0.93 0 0);
+  --brand-gray-300: oklch(0.88 0 0);
+  --brand-gray-400: oklch(0.74 0 0);
+  --brand-gray-500: oklch(0.62 0 0);
+  --brand-gray-600: oklch(0.46 0 0);
+  --brand-gray-700: oklch(0.38 0 0);
+  --brand-gray-800: oklch(0.26 0 0);
+  --brand-gray-900: oklch(0.13 0 0);
+}
+
+/*---break---*/
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sen), 'Sen', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  }
+}

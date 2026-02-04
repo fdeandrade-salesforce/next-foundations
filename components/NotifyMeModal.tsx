@@ -39,14 +39,14 @@ export default function NotifyMeModal({
     <div className="fixed inset-0 z-50 overflow-y-auto">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+        className="fixed inset-0 backdrop-default transition-opacity"
         onClick={onClose}
       />
 
       {/* Modal */}
       <div className="flex min-h-full items-center justify-center p-4">
         <div
-          className="relative bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-hidden"
+          className="relative bg-card rounded-modal shadow-modal max-w-md w-full max-h-[90vh] overflow-hidden"
           style={{ animation: 'scale-in 0.2s ease-out forwards' }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -84,7 +84,7 @@ export default function NotifyMeModal({
                     {product.brand}
                   </p>
                 )}
-                <p className="text-sm text-red-600 font-medium">Currently Out of Stock</p>
+                <p className="text-sm text-error font-medium">Currently Out of Stock</p>
               </div>
             </div>
 

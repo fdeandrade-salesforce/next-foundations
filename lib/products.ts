@@ -12,10 +12,23 @@ import { getProductRepo } from '../src/data'
 export type { Product } from '../components/ProductListingPage'
 
 /**
- * Get all products
+ * Get all products (deduplicated - one per product family)
  */
 export async function getAllProducts(): Promise<Product[]> {
   const repo = getProductRepo()
+  return repo.getAllProducts()
+}
+
+/**
+ * Get all products including all color variants
+ * Use this for ProductCard color picker functionality
+ */
+export async function getAllProductsWithVariants(): Promise<Product[]> {
+  const repo = getProductRepo()
+  if (repo.getAllProductsWithVariants) {
+    return repo.getAllProductsWithVariants()
+  }
+  // Fallback to getAllProducts if not implemented
   return repo.getAllProducts()
 }
 

@@ -4,8 +4,8 @@ import './globals.css'
 import TrackingConsentBanner from '../components/TrackingConsentBanner'
 
 export const metadata: Metadata = {
-  title: 'Market Street | The React PWA Starter Store for Retail',
-  description: 'Discover the latest trends in fashion and retail. Shop the new season collection at Market Street.',
+  title: 'Salesforce Foundations | The React PWA Starter Store for Retail',
+  description: 'Discover the latest trends in fashion and retail. Shop the new season collection at Salesforce Foundations.',
 }
 
 export default function RootLayout({

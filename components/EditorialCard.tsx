@@ -37,7 +37,7 @@ export default function EditorialCard({
               objectFit="cover"
             />
           )}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/50 to-black/70" />
+          <div className="absolute inset-0 bg-gradient-to-b from-foreground/40 via-foreground/50 to-foreground/70" />
           <div className="absolute inset-0 flex flex-col justify-end p-6 md:p-8 lg:p-10 text-white">
             {subtitle && (
               <p className="text-xs md:text-sm font-medium uppercase tracking-wide mb-2 opacity-90">

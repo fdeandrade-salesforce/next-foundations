@@ -31,7 +31,7 @@ export default function PrivacyChoicesPage() {
           {/* Introduction */}
           <section className="mb-16 md:mb-24">
             <p className="text-body-lg text-brand-gray-700 leading-relaxed mb-6">
-              At Market Street, we believe you should have control over your personal information. This page explains the choices available to you regarding how we collect, use, and share your data.
+              At Salesforce Foundations, we believe you should have control over your personal information. This page explains the choices available to you regarding how we collect, use, and share your data.
             </p>
             <p className="text-body-lg text-brand-gray-700 leading-relaxed">
               You can manage your privacy preferences at any time through your account settings or by contacting us directly.

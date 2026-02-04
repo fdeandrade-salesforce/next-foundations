@@ -1,17 +1,75 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useRef, useEffect } from 'react'
 
 interface Review {
   id: string
   author: string
   rating: number
   date: string
+  location?: string
   title: string
   content: string
   verified: boolean
   helpful: number
   images?: string[]
+}
+
+// AI Summary Generator - Creates contextual summary based on review data
+function generateAISummary(reviews: Review[], productName: string, averageRating: number): string {
+  if (reviews.length === 0) {
+    return `Be the first to share your experience with ${productName}. Your feedback helps others make informed decisions.`
+  }
+
+  const positiveReviews = reviews.filter(r => r.rating >= 4)
+  const criticalReviews = reviews.filter(r => r.rating <= 2)
+  const positivePercentage = Math.round((positiveReviews.length / reviews.length) * 100)
+  
+  // Extract common themes from review titles and content
+  const allText = reviews.map(r => `${r.title} ${r.content}`).join(' ').toLowerCase()
+  
+  const themes = {
+    quality: /quality|craftsmanship|well.made|premium|excellent|impeccable|flawless/i.test(allText),
+    design: /design|beautiful|stunning|gorgeous|elegant|minimalist|aesthetic/i.test(allText),
+    value: /worth|value|investment|price|worth it/i.test(allText),
+    size: /size|smaller|larger|perfect size|proportions/i.test(allText),
+    versatile: /versatile|works with|fits|complements|any space/i.test(allText),
+  }
+  
+  // Build the summary based on rating and themes
+  let summary = ''
+  
+  if (averageRating >= 4.5) {
+    summary = `Customers love ${productName}! `
+  } else if (averageRating >= 4) {
+    summary = `${productName} receives excellent feedback from buyers. `
+  } else if (averageRating >= 3) {
+    summary = `${productName} has mixed reviews. `
+  } else {
+    summary = `${productName} has room for improvement based on customer feedback. `
+  }
+  
+  // Add theme-based insights
+  const themeInsights: string[] = []
+  if (themes.quality) themeInsights.push('exceptional craftsmanship')
+  if (themes.design) themeInsights.push('beautiful design')
+  if (themes.versatile) themeInsights.push('versatility')
+  if (themes.value) themeInsights.push('great value')
+  
+  if (themeInsights.length > 0) {
+    summary += `Reviewers highlight ${themeInsights.slice(0, 2).join(' and ')}. `
+  }
+  
+  // Add percentage insight
+  if (positivePercentage >= 80) {
+    summary += `${positivePercentage}% of customers recommend this product.`
+  } else if (positivePercentage >= 60) {
+    summary += `Most customers are satisfied with their purchase.`
+  } else {
+    summary += `Consider reading reviews carefully before purchasing.`
+  }
+  
+  return summary
 }
 
 interface ReviewSectionProps {
@@ -20,6 +78,45 @@ interface ReviewSectionProps {
   reviews: Review[]
   averageRating: number
   totalReviews: number
+}
+
+// Expandable Review Content Component
+function ExpandableReviewContent({ content }: { content: string }) {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [needsExpansion, setNeedsExpansion] = useState(false)
+  const contentRef = useRef<HTMLParagraphElement>(null)
+  
+  useEffect(() => {
+    if (contentRef.current) {
+      // Check if content exceeds 4 lines (approximately 4 * lineHeight)
+      const lineHeight = parseFloat(getComputedStyle(contentRef.current).lineHeight) || 20
+      const maxHeight = lineHeight * 4
+      const actualHeight = contentRef.current.scrollHeight
+      setNeedsExpansion(actualHeight > maxHeight + 2) // Add small buffer for precision
+    }
+  }, [content])
+  
+  return (
+    <div>
+      <p 
+        ref={contentRef}
+        className={`text-xs sm:text-sm text-brand-gray-600 leading-relaxed ${
+          !isExpanded && needsExpansion ? 'line-clamp-4' : ''
+        }`}
+      >
+        {content}
+      </p>
+      {needsExpansion && (
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="text-xs sm:text-sm text-brand-blue-500 hover:text-brand-blue-600 hover:underline mt-1.5 font-medium transition-colors"
+          aria-expanded={isExpanded}
+        >
+          {isExpanded ? 'Read Less' : 'Read More'}
+        </button>
+      )}
+    </div>
+  )
 }
 
 // Star Rating Component
@@ -104,9 +201,17 @@ export default function ReviewSection({
   const [reviews, setReviews] = useState<Review[]>(initialReviews)
   const [sortBy, setSortBy] = useState<'newest' | 'highest' | 'lowest' | 'helpful'>('newest')
   const [filterRating, setFilterRating] = useState<number | null>(null)
+  const [filterWithPhotos, setFilterWithPhotos] = useState(false)
   const [showWriteReview, setShowWriteReview] = useState(false)
-  const [visibleCount, setVisibleCount] = useState(5)
+  const [currentPage, setCurrentPage] = useState(1)
+  const ITEMS_PER_PAGE = 5
   const [searchQuery, setSearchQuery] = useState('')
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null)
+  
+  // Sync reviews when prop changes (reviews are loaded async in parent)
+  React.useEffect(() => {
+    setReviews(initialReviews)
+  }, [initialReviews])
   
   // New review form state
   const [newReview, setNewReview] = useState({
@@ -115,10 +220,16 @@ export default function ReviewSection({
     content: '',
     name: '',
     email: '',
+    location: '',
     recommend: true,
   })
   const [submitSuccess, setSubmitSuccess] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
+  
+  // Count reviews with photos
+  const reviewsWithPhotosCount = useMemo(() => {
+    return reviews.filter(r => r.images && r.images.length > 0).length
+  }, [reviews])
 
   // Calculate rating distribution
   const ratingDistribution = useMemo(() => {
@@ -132,6 +243,11 @@ export default function ReviewSection({
     return dist
   }, [reviews])
 
+  // Generate AI summary from reviews
+  const aiSummary = useMemo(() => {
+    return generateAISummary(reviews, productName, averageRating)
+  }, [reviews, productName, averageRating])
+
   // Filter and sort reviews
   const filteredAndSortedReviews = useMemo(() => {
     let result = [...reviews]
@@ -139,6 +255,11 @@ export default function ReviewSection({
     // Apply rating filter
     if (filterRating) {
       result = result.filter(r => Math.round(r.rating) === filterRating)
+    }
+    
+    // Apply photos filter
+    if (filterWithPhotos) {
+      result = result.filter(r => r.images && r.images.length > 0)
     }
     
     // Apply search filter
@@ -168,10 +289,18 @@ export default function ReviewSection({
     }
     
     return result
-  }, [reviews, sortBy, filterRating, searchQuery])
+  }, [reviews, sortBy, filterRating, filterWithPhotos, searchQuery])
 
-  const visibleReviews = filteredAndSortedReviews.slice(0, visibleCount)
-  const hasMore = visibleCount < filteredAndSortedReviews.length
+  // Pagination logic
+  const totalPages = Math.ceil(filteredAndSortedReviews.length / ITEMS_PER_PAGE)
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
+  const endIndex = startIndex + ITEMS_PER_PAGE
+  const visibleReviews = filteredAndSortedReviews.slice(startIndex, endIndex)
+  
+  // Reset to page 1 when filters change
+  React.useEffect(() => {
+    setCurrentPage(1)
+  }, [filterRating, filterWithPhotos, searchQuery, sortBy])
 
   // Handle helpful vote
   const handleHelpful = (reviewId: string) => {
@@ -194,6 +323,7 @@ export default function ReviewSection({
       author: newReview.name,
       rating: newReview.rating,
       date: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+      location: newReview.location || undefined,
       title: newReview.title,
       content: newReview.content,
       verified: false,
@@ -201,7 +331,7 @@ export default function ReviewSection({
     }
     
     setReviews(prev => [review, ...prev])
-    setNewReview({ rating: 0, title: '', content: '', name: '', email: '', recommend: true })
+    setNewReview({ rating: 0, title: '', content: '', name: '', email: '', location: '', recommend: true })
     setShowWriteReview(false)
     setSubmitSuccess(true)
     
@@ -209,20 +339,20 @@ export default function ReviewSection({
   }
 
   return (
-    <div className="mt-16 pt-16 border-t border-brand-gray-200">
+    <div className="mt-8 sm:mt-16 pt-8 sm:pt-16 border-t border-brand-gray-200">
       {/* Collapsible Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between mb-8 hover:opacity-80 transition-opacity"
+        className="w-full flex items-center justify-between mb-4 sm:mb-6 hover:opacity-80 transition-opacity"
       >
         <div className="text-left">
-          <h2 className="text-2xl font-medium text-brand-black">Customer Reviews</h2>
-          <p className="text-sm text-brand-gray-600 mt-1">
+          <h2 className="text-xl sm:text-2xl font-medium text-brand-black">Customer Reviews</h2>
+          <p className="text-xs sm:text-sm text-brand-gray-600 mt-0.5 sm:mt-1">
             {totalReviews} reviews for {productName}
           </p>
         </div>
         <svg
-          className={`w-5 h-5 text-brand-gray-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+          className={`w-5 h-5 text-brand-gray-500 transition-transform flex-shrink-0 ml-2 ${isExpanded ? 'rotate-180' : ''}`}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -230,6 +360,36 @@ export default function ReviewSection({
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
+
+      {/* AI Review Summary - Always visible */}
+      <div className="mb-6 sm:mb-8 border border-brand-gray-200 rounded-xl p-3 sm:p-4 flex items-start gap-3 sm:gap-4 bg-gradient-to-r from-brand-blue-50/50 to-white">
+        {/* AI Sparkle Icon */}
+        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-brand-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+          <svg className="w-4 h-4 sm:w-5 sm:h-5 text-brand-blue-600" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2L9.5 9.5L2 12L9.5 14.5L12 22L14.5 14.5L22 12L14.5 9.5L12 2Z" />
+          </svg>
+        </div>
+        
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <p className="text-xs sm:text-sm font-semibold text-brand-black">AI Review Summary</p>
+            <span className="px-1.5 py-0.5 bg-brand-blue-100 text-brand-blue-700 text-micro sm:text-xs font-medium rounded">Beta</span>
+          </div>
+          <p className="text-xs sm:text-sm text-brand-gray-600 leading-relaxed">{aiSummary}</p>
+          {reviews.length > 0 && (
+            <div className="flex items-center gap-2 sm:gap-3 mt-2">
+              <div className="flex items-center gap-1">
+                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-yellow-400 fill-current" viewBox="0 0 20 20">
+                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                </svg>
+                <span className="text-micro sm:text-xs font-medium text-brand-gray-700">{averageRating.toFixed(1)}</span>
+              </div>
+              <span className="text-micro sm:text-xs text-brand-gray-400">•</span>
+              <span className="text-micro sm:text-xs text-brand-gray-600">Based on {totalReviews} review{totalReviews !== 1 ? 's' : ''}</span>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Collapsible Content */}
       {isExpanded && (
@@ -250,18 +410,18 @@ export default function ReviewSection({
       )}
 
       {/* Rating Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8 p-6 bg-brand-gray-50 rounded-xl">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-8 mb-6 sm:mb-8 p-4 sm:p-6 bg-brand-gray-50 rounded-xl">
         {/* Overall Rating */}
         <div className="text-center md:text-left">
-          <div className="text-5xl font-semibold text-brand-black mb-2">
+          <div className="text-4xl sm:text-5xl font-semibold text-brand-black mb-2">
             {averageRating.toFixed(1)}
           </div>
           <StarRating rating={averageRating} size="lg" />
-          <p className="text-sm text-brand-gray-600 mt-2">Based on {totalReviews} reviews</p>
+          <p className="text-xs sm:text-sm text-brand-gray-600 mt-2">Based on {totalReviews} reviews</p>
         </div>
 
         {/* Rating Distribution */}
-        <div className="md:col-span-2 space-y-2">
+        <div className="md:col-span-2 space-y-1.5 sm:space-y-2">
           {[5, 4, 3, 2, 1].map(rating => (
             <button
               key={rating}
@@ -280,147 +440,231 @@ export default function ReviewSection({
         </div>
       </div>
 
-      {/* Filters & Sort */}
-      <div className="mb-6">
-        {/* Search, Sort, and Button - Responsive Layout */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 mb-4">
-          {/* Search - Full Width on Mobile, Fill on Desktop */}
-          <div className="relative flex-1 w-full">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-brand-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="text"
-              placeholder="Search reviews..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-brand-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue-500 text-sm"
-            />
-          </div>
-
-          {/* Sort By and Button Row - Second Line on Mobile */}
-          <div className="flex items-center gap-4 flex-shrink-0">
-            {/* Sort By - Hug */}
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <label className="text-sm text-brand-gray-600 whitespace-nowrap">Sort by:</label>
-              <div className="relative">
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                  className="appearance-none px-3 py-2 pr-8 border border-brand-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue-500 text-sm bg-white cursor-pointer"
-                >
-                  <option value="newest">Most Recent</option>
-                  <option value="highest">Highest Rated</option>
-                  <option value="lowest">Lowest Rated</option>
-                  <option value="helpful">Most Helpful</option>
-                </select>
-                <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
-                  <svg className="w-4 h-4 text-brand-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
-              </div>
-            </div>
-
-            {/* Write Review Button - Hug */}
-            <button
-              onClick={() => setShowWriteReview(true)}
-              className="px-6 py-3 bg-brand-blue-500 text-white font-medium rounded-lg hover:bg-brand-blue-600 transition-colors flex-shrink-0 whitespace-nowrap"
-            >
-              Write a Review
-            </button>
-          </div>
+      {/* Quick Filters: Star Rating & Photos */}
+      <div className="mb-4 sm:mb-6">
+        <div className="flex items-center gap-2 mb-2 sm:mb-0">
+          <span className="text-xs sm:text-sm font-medium text-brand-gray-600">Filter by:</span>
         </div>
-
-        {/* Filter Tags */}
-        <div className="flex items-center gap-2">
-          {filterRating && (
+        
+        {/* Horizontally scrollable on mobile */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-hide">
+          {/* Star Rating Quick Filters */}
+          {[5, 4, 3, 2, 1].map(star => (
             <button
-              onClick={() => setFilterRating(null)}
-              className="flex items-center gap-1 px-3 py-2 bg-brand-blue-100 text-brand-blue-700 text-sm rounded-lg hover:bg-brand-blue-200 transition-colors"
+              key={star}
+              onClick={() => setFilterRating(filterRating === star ? null : star)}
+              className={`inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-full text-xs sm:text-sm font-medium transition-colors flex-shrink-0 ${
+                filterRating === star
+                  ? 'bg-yellow-100 text-yellow-800 border border-yellow-300'
+                  : 'bg-brand-gray-100 text-brand-gray-600 hover:bg-brand-gray-200 border border-transparent'
+              }`}
             >
-              {filterRating} stars
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              {star}
+              <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-yellow-400 fill-current" viewBox="0 0 20 20">
+                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
               </svg>
+              <span className="text-micro sm:text-xs text-brand-gray-500 hidden sm:inline">({ratingDistribution[star as keyof typeof ratingDistribution]})</span>
+            </button>
+          ))}
+          
+          {/* Divider */}
+          <div className="w-px h-5 sm:h-6 bg-brand-gray-300 mx-0.5 sm:mx-1 flex-shrink-0" />
+          
+          {/* With Photos Filter */}
+          <button
+            onClick={() => setFilterWithPhotos(!filterWithPhotos)}
+            className={`inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full text-xs sm:text-sm font-medium transition-colors flex-shrink-0 ${
+              filterWithPhotos
+                ? 'bg-brand-blue-100 text-brand-blue-700 border border-brand-blue-300'
+                : 'bg-brand-gray-100 text-brand-gray-600 hover:bg-brand-gray-200 border border-transparent'
+            }`}
+          >
+            <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span className="hidden sm:inline">With Photos</span>
+            <span className="sm:hidden">Photos</span>
+            <span className="text-micro sm:text-xs text-brand-gray-500 hidden sm:inline">({reviewsWithPhotosCount})</span>
+          </button>
+          
+          {/* Clear All Filters */}
+          {(filterRating || filterWithPhotos) && (
+            <button
+              onClick={() => {
+                setFilterRating(null)
+                setFilterWithPhotos(false)
+              }}
+              className="text-xs sm:text-sm text-brand-blue-500 hover:text-brand-blue-600 hover:underline ml-1 sm:ml-2 flex-shrink-0"
+            >
+              Clear
             </button>
           )}
         </div>
       </div>
 
+      {/* Filters & Sort */}
+      <div className="mb-4 sm:mb-6">
+        {/* Search - Full Width */}
+        <div className="relative w-full mb-3">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-brand-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Search reviews..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 sm:pl-10 pr-4 py-2.5 sm:py-2 border border-brand-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue-500 text-sm"
+          />
+        </div>
+
+        {/* Sort By and Write Review Button - Stack on mobile */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+          {/* Sort By */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs sm:text-sm text-brand-gray-600 whitespace-nowrap">Sort:</label>
+            <div className="relative flex-1 sm:flex-none">
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                className="appearance-none w-full sm:w-48 px-3 py-2.5 sm:py-2 pr-8 border border-brand-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue-500 text-sm bg-white cursor-pointer"
+              >
+                <option value="newest">Most Recent</option>
+                <option value="highest">Highest Rated</option>
+                <option value="lowest">Lowest Rated</option>
+                <option value="helpful">Most Helpful</option>
+              </select>
+              <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                <svg className="w-4 h-4 text-brand-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          {/* Write Review Button - Full width on mobile, aligned right on desktop */}
+          <button
+            onClick={() => setShowWriteReview(true)}
+            className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors"
+          >
+            Write a Review
+          </button>
+        </div>
+
+        {/* Filter Tags */}
+        {(filterRating || filterWithPhotos) && (
+          <div className="flex items-center gap-2 flex-wrap mt-3">
+            {filterRating && (
+              <button
+                onClick={() => setFilterRating(null)}
+                className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-yellow-100 text-yellow-800 text-xs sm:text-sm rounded-lg hover:bg-yellow-200 transition-colors"
+              >
+                {filterRating} stars
+                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+            {filterWithPhotos && (
+              <button
+                onClick={() => setFilterWithPhotos(false)}
+                className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-brand-blue-100 text-brand-blue-700 text-xs sm:text-sm rounded-lg hover:bg-brand-blue-200 transition-colors"
+              >
+                With Photos
+                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Active Filters Summary */}
-      {(filterRating || searchQuery) && (
-        <div className="mb-4 text-sm text-brand-gray-600">
+      {(filterRating || filterWithPhotos || searchQuery) && (
+        <div className="mb-3 sm:mb-4 text-xs sm:text-sm text-brand-gray-600">
           Showing {filteredAndSortedReviews.length} of {reviews.length} reviews
           {filterRating && ` with ${filterRating} stars`}
+          {filterWithPhotos && ` with photos`}
           {searchQuery && ` matching "${searchQuery}"`}
         </div>
       )}
 
       {/* Reviews List */}
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         {visibleReviews.length > 0 ? (
           visibleReviews.map((review) => (
-            <div key={review.id} className="border-b border-brand-gray-200 pb-6 last:border-0">
-              <div className="flex items-start gap-4">
+            <div key={review.id} className="border-b border-brand-gray-200 pb-4 sm:pb-6 last:border-0">
+              <div className="flex items-start gap-3 sm:gap-4">
                 {/* Avatar */}
-                <div className="w-12 h-12 bg-brand-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
-                  <span className="text-lg font-medium text-brand-gray-600">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-brand-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
+                  <span className="text-base sm:text-lg font-medium text-brand-gray-600">
                     {review.author.charAt(0).toUpperCase()}
                   </span>
                 </div>
 
                 {/* Content */}
-                <div className="flex-1">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-brand-black">{review.author}</span>
-                        {review.verified && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
-                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                            </svg>
-                            Verified Purchase
-                          </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-col gap-1 mb-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm sm:text-base font-medium text-brand-black">{review.author}</span>
+                      {review.verified && (
+                        <span className="inline-flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-0.5 bg-green-100 text-green-700 text-micro sm:text-xs rounded-full">
+                          <svg className="w-2.5 h-2.5 sm:w-3 sm:h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                          <span className="hidden sm:inline">Verified Purchase</span>
+                          <span className="sm:hidden">Verified</span>
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                      <StarRating rating={review.rating} size="sm" />
+                      <span className="text-micro sm:text-xs text-brand-gray-500">
+                        {review.date}
+                        {review.location && (
+                          <>
+                            <span className="mx-0.5 sm:mx-1">•</span>
+                            {review.location}
+                          </>
                         )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <StarRating rating={review.rating} size="sm" />
-                        <span className="text-xs text-brand-gray-500">{review.date}</span>
-                      </div>
+                      </span>
                     </div>
                   </div>
 
                   {review.title && (
-                    <h4 className="font-medium text-brand-black mb-2">{review.title}</h4>
+                    <h4 className="text-sm sm:text-base font-medium text-brand-black mb-1.5 sm:mb-2">{review.title}</h4>
                   )}
                   
-                  <p className="text-sm text-brand-gray-600 leading-relaxed">{review.content}</p>
+                  <ExpandableReviewContent content={review.content} />
 
                   {/* Review Images */}
                   {review.images && review.images.length > 0 && (
-                    <div className="flex gap-2 mt-3">
+                    <div className="flex gap-2 mt-2 sm:mt-3 flex-wrap">
                       {review.images.map((img, idx) => (
-                        <div key={idx} className="w-16 h-16 rounded-lg overflow-hidden bg-brand-gray-100">
+                        <button
+                          key={idx}
+                          onClick={() => setLightboxImage(img)}
+                          className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg overflow-hidden bg-brand-gray-100 hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:ring-offset-2"
+                        >
                           <img src={img} alt={`Review image ${idx + 1}`} className="w-full h-full object-cover" />
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}
 
                   {/* Helpful */}
-                  <div className="flex items-center gap-4 mt-4">
+                  <div className="flex items-center gap-3 sm:gap-4 mt-3 sm:mt-4">
                     <button
                       onClick={() => handleHelpful(review.id)}
-                      className="flex items-center gap-1.5 text-sm text-brand-gray-600 hover:text-brand-blue-500 transition-colors"
+                      className="flex items-center gap-1 sm:gap-1.5 text-xs sm:text-sm text-brand-gray-600 hover:text-brand-blue-500 transition-colors"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
                       </svg>
                       Helpful ({review.helpful})
                     </button>
-                    <button className="text-sm text-brand-gray-600 hover:text-brand-blue-500 transition-colors">
+                    <button className="text-xs sm:text-sm text-brand-gray-600 hover:text-brand-blue-500 transition-colors">
                       Report
                     </button>
                   </div>
@@ -437,6 +681,7 @@ export default function ReviewSection({
             <button
               onClick={() => {
                 setFilterRating(null)
+                setFilterWithPhotos(false)
                 setSearchQuery('')
               }}
               className="text-brand-blue-500 hover:underline mt-2"
@@ -447,15 +692,110 @@ export default function ReviewSection({
         )}
       </div>
 
-      {/* Load More */}
-      {hasMore && (
-        <div className="text-center mt-8">
-          <button
-            onClick={() => setVisibleCount(prev => prev + 5)}
-            className="px-6 py-3 border border-brand-gray-300 text-brand-black font-medium rounded-lg hover:bg-brand-gray-50 transition-colors"
-          >
-            Load More Reviews ({filteredAndSortedReviews.length - visibleCount} remaining)
-          </button>
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-brand-gray-200">
+          {/* Results info */}
+          <p className="text-xs sm:text-sm text-brand-gray-600 order-2 sm:order-1">
+            Showing {startIndex + 1}-{Math.min(endIndex, filteredAndSortedReviews.length)} of {filteredAndSortedReviews.length} reviews
+          </p>
+          
+          {/* Pagination controls */}
+          <div className="flex items-center gap-1 sm:gap-2 order-1 sm:order-2">
+            {/* Previous button */}
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className={`p-1.5 sm:p-2 rounded-lg transition-colors ${
+                currentPage === 1
+                  ? 'text-brand-gray-300 cursor-not-allowed'
+                  : 'text-brand-gray-600 hover:bg-brand-gray-100 hover:text-brand-black'
+              }`}
+              aria-label="Previous page"
+            >
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            
+            {/* Page numbers */}
+            <div className="flex items-center gap-0.5 sm:gap-1">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
+                // Show first page, last page, current page, and pages around current
+                const showPage = page === 1 || 
+                  page === totalPages || 
+                  Math.abs(page - currentPage) <= 1
+                
+                // Show ellipsis
+                const showEllipsisBefore = page === currentPage - 2 && currentPage > 3
+                const showEllipsisAfter = page === currentPage + 2 && currentPage < totalPages - 2
+                
+                if (showEllipsisBefore || showEllipsisAfter) {
+                  return (
+                    <span key={page} className="px-1 sm:px-2 text-brand-gray-400 text-sm">...</span>
+                  )
+                }
+                
+                if (!showPage) return null
+                
+                return (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`min-w-[28px] sm:min-w-[32px] h-7 sm:h-8 px-1.5 sm:px-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+                      currentPage === page
+                        ? 'bg-brand-blue-500 text-white'
+                        : 'text-brand-gray-600 hover:bg-brand-gray-100'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                )
+              })}
+            </div>
+            
+            {/* Next button */}
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              className={`p-1.5 sm:p-2 rounded-lg transition-colors ${
+                currentPage === totalPages
+                  ? 'text-brand-gray-300 cursor-not-allowed'
+                  : 'text-brand-gray-600 hover:bg-brand-gray-100 hover:text-brand-black'
+              }`}
+              aria-label="Next page"
+            >
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Image Lightbox Modal */}
+      {lightboxImage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-90" 
+            onClick={() => setLightboxImage(null)} 
+          />
+          <div className="relative max-w-4xl max-h-[90vh] z-10">
+            <button
+              onClick={() => setLightboxImage(null)}
+              className="absolute -top-12 right-0 p-2 text-white hover:text-brand-gray-300 transition-colors"
+              aria-label="Close image"
+            >
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <img 
+              src={lightboxImage} 
+              alt="Review image full size" 
+              className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+            />
+          </div>
         </div>
       )}
 
@@ -519,13 +859,25 @@ export default function ReviewSection({
                   </label>
                   <textarea
                     value={newReview.content}
-                    onChange={(e) => setNewReview(prev => ({ ...prev, content: e.target.value }))}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      if (value.length <= 2000) {
+                        setNewReview(prev => ({ ...prev, content: value }))
+                      }
+                    }}
                     placeholder="What did you like or dislike about this product?"
                     rows={4}
                     required
+                    maxLength={2000}
+                    aria-describedby="review-content-description"
                     className="w-full px-4 py-2 border border-brand-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue-500 text-sm resize-none"
                   />
-                  <p className="text-xs text-brand-gray-500 mt-1">Minimum 50 characters</p>
+                  <div className="flex justify-between items-center mt-1">
+                    <p id="review-content-description" className="text-xs text-brand-gray-500">Minimum 50 characters</p>
+                    <p className={`text-xs ${newReview.content.length >= 2000 ? 'text-red-500' : 'text-brand-gray-500'}`}>
+                      {newReview.content.length}/2000
+                    </p>
+                  </div>
                 </div>
 
                 {/* Recommend */}
@@ -586,6 +938,21 @@ export default function ReviewSection({
                     className="w-full px-4 py-2 border border-brand-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue-500 text-sm"
                   />
                   <p className="text-xs text-brand-gray-500 mt-1">Your email will not be published</p>
+                </div>
+
+                {/* Location */}
+                <div>
+                  <label className="block text-sm font-medium text-brand-black mb-2">
+                    Location
+                  </label>
+                  <input
+                    type="text"
+                    value={newReview.location}
+                    onChange={(e) => setNewReview(prev => ({ ...prev, location: e.target.value }))}
+                    placeholder="City, State or Country (e.g., Los Angeles, CA)"
+                    className="w-full px-4 py-2 border border-brand-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue-500 text-sm"
+                  />
+                  <p className="text-xs text-brand-gray-500 mt-1">Optional - helps other customers</p>
                 </div>
 
                 {/* Photo Upload Placeholder */}

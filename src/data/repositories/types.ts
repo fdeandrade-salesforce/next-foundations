@@ -45,9 +45,14 @@ import {
 
 export interface IProductRepository {
   /**
-   * Get all products
+   * Get all products (deduplicated for PLP views - one per product family)
    */
   getAllProducts(): Promise<Product[]>
+  
+  /**
+   * Get all products including color variants (for PDP variant selection)
+   */
+  getAllProductsWithVariants?(): Promise<Product[]>
 
   /**
    * Get a product by ID/slug
@@ -108,6 +113,17 @@ export interface IProductRepository {
    * Search products by query
    */
   searchProducts(query: string, limit?: number): Promise<Product[]>
+
+  /**
+   * Get all variants for a base product (products with the same name)
+   */
+  getProductVariants(baseProductId: string): Promise<Product[]>
+
+  /**
+   * Find the base product ID for a given product ID
+   * Returns the first product with the same name (alphabetically by ID)
+   */
+  getBaseProductId(productId: string): Promise<string | undefined>
 }
 
 // ============================================================================

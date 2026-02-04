@@ -32,7 +32,7 @@ export default function SustainabilityPage() {
           {/* Introduction */}
           <section className="mb-16 md:mb-24">
             <p className="text-body-lg text-brand-gray-700 leading-relaxed mb-6">
-              At Market Street, sustainability isn&apos;t a trend—it&apos;s a fundamental part of how we operate. We believe that responsible business practices and environmental stewardship go hand in hand with creating exceptional products and experiences.
+              At Salesforce Foundations, sustainability isn&apos;t a trend—it&apos;s a fundamental part of how we operate. We believe that responsible business practices and environmental stewardship go hand in hand with creating exceptional products and experiences.
             </p>
             <p className="text-body-lg text-brand-gray-700 leading-relaxed">
               Our commitment to sustainability extends across every aspect of our business, from material sourcing and manufacturing to packaging, shipping, and beyond. We&apos;re building a brand that not only serves our customers today but protects the planet for future generations.

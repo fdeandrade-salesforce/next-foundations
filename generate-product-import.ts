@@ -24,7 +24,7 @@ async function generateImport() {
   // Get all products
   const products = await getAllProducts();
 
-  // Define headers matching sample structure + Market Street specific fields
+  // Define headers matching sample structure + Salesforce Foundations specific fields
 const headers = [
   'Product Name',
   'Product Description',
@@ -103,7 +103,7 @@ const headers = [
   
   return {
     'Product Name': product.name + (product.color ? ` - ${product.color}` : ''),
-    'Product Description': product.shortDescription || `${product.name} from Market Street's ${product.category} collection.`,
+    'Product Description': product.shortDescription || `${product.name} from Salesforce Foundations's ${product.category} collection.`,
     'SKU': product.sku || product.id.toUpperCase().replace(/-/g, '_'),
     'Product Type': productType,
     'Product Code': product.sku || '',
@@ -114,7 +114,7 @@ const headers = [
     'Category 2': product.subcategory,
     'Price (sale) USD': product.price,
     'Price (original) USD': product.originalPrice || product.price,
-    'Brand': product.brand || 'Market Street',
+    'Brand': product.brand || 'Salesforce Foundations',
     'Color': product.color || '',
     'Available Colors': product.colors ? product.colors.join(', ') : '',
     'Size': product.size && product.size.length > 0 ? product.size[0] : '',

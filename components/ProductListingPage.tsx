@@ -1,12 +1,14 @@
 'use client'
 
 import React, { useState, useMemo, useEffect, useCallback, useRef, useLayoutEffect } from 'react'
+import Link from 'next/link'
 import ProductCard from './ProductCard'
 import QuickViewModal from './QuickViewModal'
 import LazyImage from './LazyImage'
 import StoreLocatorModal from './StoreLocatorModal'
 import NotifyMeModal from './NotifyMeModal'
 import { addToCart } from '../lib/cart'
+import { toggleWishlist, getWishlistIds } from '../lib/wishlist'
 
 export interface Product {
   id: string
@@ -97,6 +99,23 @@ export default function ProductListingPage({
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null)
   const [notifyMeProduct, setNotifyMeProduct] = useState<Product | null>(null)
   const [wishlist, setWishlist] = useState<string[]>([])
+  
+  // Initialize wishlist from localStorage and listen for updates
+  useEffect(() => {
+    // Load initial wishlist
+    setWishlist(getWishlistIds())
+    
+    // Listen for wishlist updates from other components
+    const handleWishlistUpdate = () => {
+      setWishlist(getWishlistIds())
+    }
+    
+    window.addEventListener('wishlistUpdated', handleWishlistUpdate)
+    return () => {
+      window.removeEventListener('wishlistUpdated', handleWishlistUpdate)
+    }
+  }, [])
+  
   const [showStoreLocator, setShowStoreLocator] = useState(false)
   const [selectedStore, setSelectedStore] = useState<{
     id: string
@@ -449,8 +468,8 @@ export default function ProductListingPage({
   }
 
   // Handlers
-  const handleAddToCart = (product: Product, size?: string, color?: string) => {
-    addToCart(product, 1, size, color)
+  const handleAddToCart = (product: Product, quantity: number, size?: string, color?: string) => {
+    addToCart(product, quantity, size, color)
   }
 
   const handleAddToCartSimple = (product: Product) => {
@@ -480,13 +499,10 @@ export default function ProductListingPage({
     // You can add toast notification here
   }
 
-  const handleAddToWishlist = (product: Product) => {
-    setWishlist((prev) => {
-      if (prev.includes(product.id)) {
-        return prev.filter((id) => id !== product.id)
-      }
-      return [...prev, product.id]
-    })
+  const handleAddToWishlist = (product: Product, size?: string, color?: string) => {
+    // Only pass size/color if they were explicitly selected (from QuickViewModal)
+    toggleWishlist(product, size, color, size || color ? 'pdp' : 'card')
+    // State will be updated via the wishlistUpdated event listener
   }
 
   const handleSizeToggle = (size: string) => {
@@ -628,16 +644,20 @@ export default function ProductListingPage({
   }
 
   // Generate breadcrumbs
+  const normalizeUrl = (str: string) => {
+    return str.toLowerCase().replace(/\s+/g, '-')
+  }
+  
   const breadcrumbs = useMemo(() => {
     const crumbs = [
       { label: 'Home', href: '/' },
-      { label: category, href: `/${category.toLowerCase()}` },
+      { label: category, href: `/${normalizeUrl(category)}` },
     ]
     
     if (subcategory) {
       crumbs.push({
         label: subcategory,
-        href: `/${category.toLowerCase()}/${subcategory.toLowerCase()}`,
+        href: `/${normalizeUrl(category)}/${normalizeUrl(subcategory)}`,
       })
     }
     
@@ -680,14 +700,21 @@ export default function ProductListingPage({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Breadcrumbs */}
         <nav className="flex items-center gap-2 text-sm text-brand-gray-500 mb-6">
-          {breadcrumbs.map((crumb, idx) => (
-            <React.Fragment key={idx}>
-              {idx > 0 && <span>&gt;</span>}
-              <a href={crumb.href} className="hover:text-brand-blue-500 transition-colors">
-                {crumb.label}
-              </a>
-            </React.Fragment>
-          ))}
+          {breadcrumbs.map((crumb, idx) => {
+            const isLast = idx === breadcrumbs.length - 1
+            return (
+              <React.Fragment key={idx}>
+                {idx > 0 && <span>&gt;</span>}
+                {isLast ? (
+                  <span className="text-brand-black">{crumb.label}</span>
+                ) : (
+                  <Link href={crumb.href} className="hover:text-brand-blue-500 transition-colors">
+                    {crumb.label}
+                  </Link>
+                )}
+              </React.Fragment>
+            )
+          })}
         </nav>
 
         {/* Toolbar - Filters and Sort */}
@@ -1381,6 +1408,8 @@ export default function ProductListingPage({
                             product={item.data}
                             onUnifiedAction={handleUnifiedAction}
                             onAddToWishlist={handleAddToWishlist}
+                            isInWishlist={wishlist.includes(item.data.id)}
+                            allProducts={products}
                           />
                         )
                       }
@@ -1490,7 +1519,7 @@ export default function ProductListingPage({
       {quickViewProduct && (
         <QuickViewModal
           product={quickViewProduct}
-          allProducts={safeProducts}
+          productVariants={[]}
           isOpen={!!quickViewProduct}
           onClose={() => setQuickViewProduct(null)}
           onAddToCart={handleAddToCart}

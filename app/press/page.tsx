@@ -31,7 +31,7 @@ export default function PressPage() {
           {/* Introduction */}
           <section className="mb-16 md:mb-24">
             <p className="text-body-lg text-brand-gray-700 leading-relaxed mb-6">
-              Welcome to the Market Street press center. Here you&apos;ll find the latest news, press releases, media resources, and information about our brand, products, and initiatives.
+              Welcome to the Salesforce Foundations press center. Here you&apos;ll find the latest news, press releases, media resources, and information about our brand, products, and initiatives.
             </p>
             <p className="text-body-lg text-brand-gray-700 leading-relaxed">
               For media inquiries, interview requests, or access to high-resolution images and brand assets, please contact our press team.
@@ -73,35 +73,35 @@ export default function PressPage() {
             <div className="space-y-6">
               <div className="border-b border-brand-gray-200 pb-6">
                 <h3 className="text-h5 font-semibold text-brand-black mb-2">
-                  Market Street Launches New Collection
+                  Salesforce Foundations Launches New Collection
                 </h3>
                 <p className="text-body-sm text-brand-gray-500 mb-3">
                   January 15, 2024
                 </p>
                 <p className="text-body text-brand-gray-700 leading-relaxed">
-                  Market Street announces the launch of its latest collection, featuring sustainable materials and thoughtful design. The new line represents our continued commitment to creating products that balance form, function, and environmental responsibility.
+                  Salesforce Foundations announces the launch of its latest collection, featuring sustainable materials and thoughtful design. The new line represents our continued commitment to creating products that balance form, function, and environmental responsibility.
                 </p>
               </div>
               <div className="border-b border-brand-gray-200 pb-6">
                 <h3 className="text-h5 font-semibold text-brand-black mb-2">
-                  Market Street Achieves Carbon-Neutral Shipping
+                  Salesforce Foundations Achieves Carbon-Neutral Shipping
                 </h3>
                 <p className="text-body-sm text-brand-gray-500 mb-3">
                   December 10, 2023
                 </p>
                 <p className="text-body text-brand-gray-700 leading-relaxed">
-                  Market Street announces that all shipping operations are now carbon-neutral, marking a significant milestone in the company&apos;s sustainability journey. This achievement supports our commitment to responsible business practices.
+                  Salesforce Foundations announces that all shipping operations are now carbon-neutral, marking a significant milestone in the company&apos;s sustainability journey. This achievement supports our commitment to responsible business practices.
                 </p>
               </div>
               <div className="border-b border-brand-gray-200 pb-6">
                 <h3 className="text-h5 font-semibold text-brand-black mb-2">
-                  Market Street Opens New Headquarters
+                  Salesforce Foundations Opens New Headquarters
                 </h3>
                 <p className="text-body-sm text-brand-gray-500 mb-3">
                   November 5, 2023
                 </p>
                 <p className="text-body text-brand-gray-700 leading-relaxed">
-                  Market Street celebrates the opening of its new headquarters in Vancouver, designed with sustainability and collaboration in mind. The space reflects our brand values and provides an inspiring environment for our growing team.
+                  Salesforce Foundations celebrates the opening of its new headquarters in Vancouver, designed with sustainability and collaboration in mind. The space reflects our brand values and provides an inspiring environment for our growing team.
                 </p>
               </div>
             </div>
@@ -121,7 +121,7 @@ export default function PressPage() {
                   Logo & Brand Guidelines
                 </h4>
                 <p className="text-body text-brand-gray-700 mb-4">
-                  Download our logo files and brand guidelines to ensure accurate representation of Market Street in your coverage.
+                  Download our logo files and brand guidelines to ensure accurate representation of Salesforce Foundations in your coverage.
                 </p>
                 <button className="bg-brand-blue-500 text-white px-6 py-3 text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors">
                   Request Assets
@@ -149,10 +149,10 @@ export default function PressPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div>
                 <h3 className="text-h5 font-semibold text-brand-black mb-3">
-                  About Market Street
+                  About Salesforce Foundations
                 </h3>
                 <p className="text-body text-brand-gray-700 leading-relaxed">
-                  Market Street is a modern retail brand committed to creating well-designed products that seamlessly integrate into everyday life. Founded on principles of thoughtful design, sustainability, and exceptional customer experience, we&apos;re building a brand that makes commerce feel natural.
+                  Salesforce Foundations is a modern retail brand committed to creating well-designed products that seamlessly integrate into everyday life. Founded on principles of thoughtful design, sustainability, and exceptional customer experience, we&apos;re building a brand that makes commerce feel natural.
                 </p>
               </div>
               <div>

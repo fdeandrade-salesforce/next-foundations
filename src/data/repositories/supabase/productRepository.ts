@@ -17,6 +17,32 @@ export class SupabaseProductRepository implements IProductRepository {
   async getAllProducts(): Promise<Product[]> {
     try {
       const supabase = getSupabaseClient()
+      // First, try to fetch only base products (if is_base_product column exists)
+      // This prevents duplicate products from appearing on PLP
+      const { data, error } = await supabase
+        .from('products')
+        .select(`
+          *,
+          product_images(image_url, image_order),
+          product_variants(*)
+        `)
+        .order('name', { ascending: true })
+
+      if (error) throw error
+
+      // Deduplicate products by name - keep only the first occurrence (base product)
+      const products = this.mapProducts(data || [])
+      return this.deduplicateProducts(products)
+    } catch (error) {
+      console.error('Error fetching all products:', error)
+      return [] // Return empty array on error to prevent crashes
+    }
+  }
+  
+  // Get ALL products including color variants (for PDP variant selection)
+  async getAllProductsWithVariants(): Promise<Product[]> {
+    try {
+      const supabase = getSupabaseClient()
       const { data, error } = await supabase
         .from('products')
         .select(`
@@ -30,8 +56,8 @@ export class SupabaseProductRepository implements IProductRepository {
 
       return this.mapProducts(data || [])
     } catch (error) {
-      console.error('Error fetching all products:', error)
-      return [] // Return empty array on error to prevent crashes
+      console.error('Error fetching all products with variants:', error)
+      return []
     }
   }
 
@@ -64,7 +90,7 @@ export class SupabaseProductRepository implements IProductRepository {
     filters?: ProductFilters,
     sort: ProductSortOption = 'relevance',
     page: number = 1,
-    pageSize: number = 24
+    pageSize?: number
   ): Promise<PaginatedResult<Product>> {
     try {
       const supabase = getSupabaseClient()
@@ -127,26 +153,33 @@ export class SupabaseProductRepository implements IProductRepository {
           query = query.order('name', { ascending: true })
       }
 
-      // Apply pagination
-      const from = (page - 1) * pageSize
-      const to = from + pageSize - 1
-      query = query.range(from, to)
+      // Apply pagination only if pageSize is explicitly provided
+      if (pageSize !== undefined && pageSize > 0) {
+        const from = (page - 1) * pageSize
+        const to = from + pageSize - 1
+        query = query.range(from, to)
+      }
 
       const { data, error, count } = await query
 
       if (error) throw error
 
-      const total = count || 0
-      const totalPages = Math.ceil(total / pageSize)
+      const total = count || (data?.length || 0)
+      // If no pageSize provided, return all items (no pagination)
+      const effectivePageSize = pageSize || total
+      const totalPages = effectivePageSize > 0 ? Math.ceil(total / effectivePageSize) : 1
 
+      // Deduplicate products by name for PLP views
+      const products = this.deduplicateProducts(this.mapProducts(data || []))
+      
       return {
-        items: this.mapProducts(data || []),
-        total,
+        items: products,
+        total: products.length, // Use deduplicated count
         page,
-        pageSize,
-        totalPages,
-        hasNext: page < totalPages,
-        hasPrevious: page > 1,
+        pageSize: effectivePageSize,
+        totalPages: effectivePageSize > 0 ? Math.ceil(products.length / effectivePageSize) : 1,
+        hasNext: pageSize !== undefined ? page < totalPages : false,
+        hasPrevious: pageSize !== undefined ? page > 1 : false,
       }
     } catch (error) {
       console.error('Error listing products:', error)
@@ -154,7 +187,7 @@ export class SupabaseProductRepository implements IProductRepository {
         items: [],
         total: 0,
         page,
-        pageSize,
+        pageSize: pageSize || 0,
         totalPages: 0,
         hasNext: false,
         hasPrevious: false,
@@ -197,7 +230,8 @@ export class SupabaseProductRepository implements IProductRepository {
 
       if (error) throw error
 
-      return this.mapProducts(data || [])
+      // Deduplicate products by name
+      return this.deduplicateProducts(this.mapProducts(data || []))
     } catch (error) {
       console.error('Error fetching products by subcategory:', error)
       return []
@@ -220,7 +254,8 @@ export class SupabaseProductRepository implements IProductRepository {
 
       if (error) throw error
 
-      return this.mapProducts(data || [])
+      // Deduplicate products by name
+      return this.deduplicateProducts(this.mapProducts(data || []))
     } catch (error) {
       console.error('Error fetching featured products:', error)
       return []
@@ -243,7 +278,8 @@ export class SupabaseProductRepository implements IProductRepository {
 
       if (error) throw error
 
-      return this.mapProducts(data || [])
+      // Deduplicate products by name
+      return this.deduplicateProducts(this.mapProducts(data || []))
     } catch (error) {
       console.error('Error fetching new arrivals:', error)
       return []
@@ -287,7 +323,7 @@ export class SupabaseProductRepository implements IProductRepository {
 
         const { data: fallbackData, error: fallbackError } = await fallbackQuery
         if (!fallbackError && fallbackData) {
-          return this.mapProducts(fallbackData)
+          return this.deduplicateProducts(this.mapProducts(fallbackData))
         }
       }
 
@@ -333,7 +369,8 @@ export class SupabaseProductRepository implements IProductRepository {
 
       if (error) throw error
 
-      const products = this.mapProducts(data || [])
+      // Deduplicate products by name
+      const products = this.deduplicateProducts(this.mapProducts(data || []))
 
       // Fallback if no new products
       if (products.length === 0) {
@@ -353,7 +390,7 @@ export class SupabaseProductRepository implements IProductRepository {
 
         const { data: fallbackData, error: fallbackError } = await fallbackQuery
         if (!fallbackError && fallbackData) {
-          return this.mapProducts(fallbackData)
+          return this.deduplicateProducts(this.mapProducts(fallbackData))
         }
       }
 
@@ -379,7 +416,8 @@ export class SupabaseProductRepository implements IProductRepository {
 
       if (error) throw error
 
-      return this.mapProducts(data || [])
+      // Deduplicate products by name
+      return this.deduplicateProducts(this.mapProducts(data || []))
     } catch (error) {
       console.error('Error fetching sale products:', error)
       return []
@@ -482,10 +520,67 @@ export class SupabaseProductRepository implements IProductRepository {
 
       if (error) throw error
 
-      return this.mapProducts(data || [])
+      // Deduplicate products by name for search results
+      return this.deduplicateProducts(this.mapProducts(data || []))
     } catch (error) {
       console.error('Error searching products:', error)
       return []
+    }
+  }
+
+  async getProductVariants(baseProductId: string): Promise<Product[]> {
+    try {
+      const baseProduct = await this.getProductById(baseProductId)
+      if (!baseProduct) return []
+
+      const supabase = getSupabaseClient()
+      const { data, error } = await supabase
+        .from('products')
+        .select(`
+          *,
+          product_images(image_url, image_order),
+          product_variants(*)
+        `)
+        .eq('name', baseProduct.name)
+        .order('id', { ascending: true })
+
+      if (error) throw error
+
+      return this.mapProducts(data || [])
+    } catch (error) {
+      console.error('Error fetching product variants:', error)
+      return []
+    }
+  }
+
+  async getBaseProductId(productId: string): Promise<string | undefined> {
+    try {
+      const product = await this.getProductById(productId)
+      if (!product) return undefined
+
+      const supabase = getSupabaseClient()
+      const { data, error } = await supabase
+        .from('products')
+        .select('id')
+        .eq('name', product.name)
+        .order('id', { ascending: true })
+        .limit(1)
+
+      if (error) {
+        throw error
+      }
+
+      // Return first product ID (base product) or the original if none found
+      if (data && Array.isArray(data) && data.length > 0) {
+        const firstItem = data[0] as { id: string }
+        if (firstItem?.id) {
+          return firstItem.id
+        }
+      }
+      return productId
+    } catch (error) {
+      console.error('Error finding base product:', error)
+      return productId // Fallback to original ID
     }
   }
 
@@ -500,20 +595,26 @@ export class SupabaseProductRepository implements IProductRepository {
       ?.sort((a: any, b: any) => a.image_order - b.image_order)
       .map((img: any) => img.image_url) || []
 
-    // Get colors from variants
-    const colors = row.product_variants
-      ?.map((v: any) => v.color)
-      .filter((c: string) => c) || []
+    // Get unique colors from variants
+    const colorsSet = new Set<string>()
+    row.product_variants?.forEach((v: any) => {
+      if (v.color) colorsSet.add(v.color)
+    })
+    // Also add the product's own color if it has one
+    if (row.color) colorsSet.add(row.color)
+    const colors = Array.from(colorsSet)
 
-    // Get sizes from variants
-    const sizes = row.product_variants
-      ?.map((v: any) => v.size)
-      .filter((s: string) => s) || []
+    // Get unique sizes from variants
+    const sizesSet = new Set<string>()
+    row.product_variants?.forEach((v: any) => {
+      if (v.size) sizesSet.add(v.size)
+    })
+    const sizes = Array.from(sizesSet)
 
     return {
       id: row.id,
       name: row.name,
-      brand: row.brand || 'Market Street',
+      brand: row.brand || 'Salesforce Foundations',
       price: parseFloat(row.price),
       originalPrice: row.original_price ? parseFloat(row.original_price) : undefined,
       image: row.image,
@@ -551,5 +652,62 @@ export class SupabaseProductRepository implements IProductRepository {
       warranty: row.warranty,
       videos: row.videos ? (Array.isArray(row.videos) ? row.videos : []) : undefined,
     }
+  }
+
+  /**
+   * Deduplicate products by name for PLP views
+   * This ensures only one product card appears per product family
+   * (e.g., Pure Cube appears once, not once per color variant)
+   * 
+   * The method also consolidates color information from all variants
+   */
+  private deduplicateProducts(products: Product[]): Product[] {
+    const productsByName = new Map<string, Product[]>()
+    
+    // Group products by name
+    for (const product of products) {
+      const existing = productsByName.get(product.name) || []
+      existing.push(product)
+      productsByName.set(product.name, existing)
+    }
+    
+    // For each product name, return the first one but with consolidated colors
+    const deduplicated: Product[] = []
+    
+    // Convert Map entries to array for iteration
+    const entries = Array.from(productsByName.entries())
+    for (const [_name, variants] of entries) {
+      // Use the first variant as the base product
+      const baseProduct = variants[0]
+      
+      // Collect all unique colors from all variants
+      const allColors = new Set<string>()
+      let hasVariants = false
+      
+      for (const variant of variants) {
+        if (variant.color) {
+          allColors.add(variant.color)
+        }
+        if (variant.colors) {
+          variant.colors.forEach(c => allColors.add(c))
+        }
+      }
+      
+      // If there are multiple variants, mark as having variants
+      if (variants.length > 1) {
+        hasVariants = true
+      }
+      
+      // Create the consolidated product
+      const consolidated: Product = {
+        ...baseProduct,
+        colors: allColors.size > 0 ? Array.from(allColors) : baseProduct.colors,
+        variants: hasVariants ? variants.length - 1 : baseProduct.variants,
+      }
+      
+      deduplicated.push(consolidated)
+    }
+    
+    return deduplicated
   }
 }

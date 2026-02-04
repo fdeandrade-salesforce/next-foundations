@@ -1,18 +1,19 @@
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Product } from './ProductListingPage'
 import LazyImage from './LazyImage'
-import { getAllProducts } from '../lib/products'
+import { getColorHex } from '../lib/color-utils'
 
 interface ProductCardProps {
   product: Product
   onUnifiedAction?: (product: Product) => void
   onAddToCart?: (product: Product) => void
   onQuickView?: (product: Product) => void
-  onAddToWishlist?: (product: Product) => void
+  onAddToWishlist?: (product: Product, size?: string, color?: string) => void
   showQuickAdd?: boolean
   isInWishlist?: boolean
+  allProducts?: Product[]
 }
 
 export default function ProductCard({
@@ -23,38 +24,35 @@ export default function ProductCard({
   onAddToWishlist,
   showQuickAdd = false,
   isInWishlist = false,
+  allProducts = [],
 }: ProductCardProps) {
   const router = useRouter()
   const [hoveredColor, setHoveredColor] = useState<string | null>(null)
+  const [isCardHovered, setIsCardHovered] = useState(false)
 
-  const [allProducts, setAllProducts] = useState<Product[]>([])
-  
-  // Load all products to find color variants
-  useEffect(() => {
-    const loadProducts = async () => {
-      const products = await getAllProducts()
-      setAllProducts(products)
-    }
-    loadProducts()
-  }, [])
-
-  // Find variant products by matching product name and color
+  // Find variant products by matching product name, category, and subcategory
   const variantProducts = useMemo(() => {
-    if (!product.colors || product.colors.length <= 1) {
+    if (!product.colors || product.colors.length <= 1 || allProducts.length === 0) {
       return {}
     }
     
     const variants: Record<string, Product> = {}
     
-    // Find products with the same name but different colors
+    // Find products with the same name, category, subcategory, but different colors
     allProducts.forEach((p) => {
-      if (p.name === product.name && p.color && product.colors?.includes(p.color)) {
+      if (
+        p.name === product.name && 
+        p.category === product.category &&
+        p.subcategory === product.subcategory &&
+        p.color && 
+        product.colors?.includes(p.color)
+      ) {
         variants[p.color] = p
       }
     })
     
     return variants
-  }, [allProducts, product.name, product.colors])
+  }, [allProducts, product.name, product.category, product.subcategory, product.colors])
 
   // Get current variant based on hovered color
   const currentDisplayVariant = useMemo(() => {
@@ -64,10 +62,18 @@ export default function ProductCard({
     return product
   }, [hoveredColor, variantProducts, product])
 
-  // Get current image based on hovered color
+  // Get current image based on hovered color and card hover state
   const currentImage = useMemo(() => {
-    return currentDisplayVariant.images?.[0] || currentDisplayVariant.image
-  }, [currentDisplayVariant])
+    const images = currentDisplayVariant.images
+    const primaryImage = images?.[0] || currentDisplayVariant.image
+    
+    // If card is hovered and there's a second image, show it
+    if (isCardHovered && images && images.length >= 2) {
+      return images[1]
+    }
+    
+    return primaryImage
+  }, [currentDisplayVariant, isCardHovered])
 
   // Check if current display variant (hovered or default) is out of stock
   const isCurrentlyOutOfStock = !currentDisplayVariant.inStock
@@ -99,13 +105,13 @@ export default function ProductCard({
 
   const getBadgeColor = (badge: string) => {
     const colors: Record<string, string> = {
-      'new': 'bg-green-600',
-      'best-seller': 'bg-brand-blue-500',
-      'online-only': 'bg-purple-600',
-      'limited-edition': 'bg-orange-600',
-      'promotion': 'bg-brand-blue-500',
+      'new': 'badge-new',
+      'best-seller': 'badge-bestseller',
+      'online-only': 'badge-online-only',
+      'limited-edition': 'badge-limited',
+      'promotion': 'badge-sale',
     }
-    return colors[badge] || 'bg-brand-gray-800'
+    return colors[badge] || 'bg-muted text-muted-foreground'
   }
 
   // Calculate badges based on current display variant (hovered or default)
@@ -165,13 +171,17 @@ export default function ProductCard({
   }, [product, variantProducts])
 
   return (
-    <div className="product-card group">
+    <div 
+      className="product-card group"
+      onMouseEnter={() => setIsCardHovered(true)}
+      onMouseLeave={() => setIsCardHovered(false)}
+    >
       <div className="product-image relative">
         <div className="relative w-full h-full">
           <LazyImage
             src={currentImage}
             alt={product.name}
-            className={`${
+            className={`transition-opacity duration-300 ${
               isCurrentlyOutOfStock ? 'opacity-50' : ''
             }`}
             objectFit="cover"
@@ -187,21 +197,21 @@ export default function ProductCard({
         <div className="absolute top-2 left-2 flex flex-col items-start gap-1 z-20">
           {/* Out of Stock Badge - Show first if current display variant (hovered or default) is out of stock */}
           {isCurrentlyOutOfStock && (
-            <span className="bg-red-600 text-white px-2 py-1 text-xs font-semibold uppercase rounded-md inline-block">
+            <span className="badge-out-of-stock px-2 py-1 text-xs font-semibold uppercase rounded-badge inline-block">
               Out of Stock
             </span>
           )}
           {badges.filter(badge => badge !== 'promotion').slice(0, 2).map((badge, idx) => (
             <span
               key={idx}
-              className={`${getBadgeColor(badge)} text-white px-2 py-1 text-xs font-semibold uppercase rounded-md inline-block`}
+              className={`${getBadgeColor(badge)} px-2 py-1 text-xs font-semibold uppercase rounded-badge inline-block`}
             >
               {getBadgeLabel(badge)}
             </span>
           ))}
           {/* Percent-off badge - show if there's a discount (prioritize this over promotion badge) */}
           {percentOffBadge !== null && percentOffBadge !== undefined && (
-            <span className="bg-brand-blue-500 text-white px-2 py-1 text-xs font-semibold rounded-md inline-block">
+            <span className="badge-sale px-2 py-1 text-xs font-semibold rounded-badge inline-block">
               -{percentOffBadge}%
             </span>
           )}
@@ -234,20 +244,20 @@ export default function ProductCard({
                 e.stopPropagation()
                 onAddToWishlist(product)
               }}
-              className={`p-2 rounded-full transition-all ${
+              className={`p-1.5 rounded-full transition-all ${
                 isInWishlist 
                   ? 'bg-red-50 opacity-100' 
-                  : 'bg-white/90 hover:bg-white opacity-0 group-hover:opacity-100'
+                  : 'bg-white/70 hover:bg-white opacity-0 group-hover:opacity-100'
               }`}
               aria-label={isInWishlist ? 'Remove from wishlist' : 'Add to wishlist'}
             >
               <svg 
-                className={`w-5 h-5 transition-colors ${isInWishlist ? 'text-red-500 fill-current' : 'text-brand-black'}`} 
+                className={`w-4 h-4 transition-colors ${isInWishlist ? 'text-red-500 fill-current' : 'text-brand-gray-500'}`} 
                 fill={isInWishlist ? 'currentColor' : 'none'} 
                 stroke="currentColor" 
                 viewBox="0 0 24 24"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
               </svg>
             </button>
           )}
@@ -343,20 +353,19 @@ export default function ProductCard({
         {product.colors && product.colors.length > 0 && (
           <div className="flex items-center gap-1 mb-2 relative z-20">
             {product.colors.slice(0, 5).map((color, idx) => {
-              const variantProduct = variantProducts[color]
               const isCurrentColor = product.color === color
-              const hasVariant = !!variantProduct && variantProduct.id !== product.id
+              const variantProduct = variantProducts[color]
+              // Link to the variant product if it exists, otherwise current product with color param
+              const href = variantProduct 
+                ? `/product/${variantProduct.id}`
+                : `/product/${product.id}?color=${encodeURIComponent(color)}`
               
               return (
                 <Link
                   key={idx}
-                  href={hasVariant ? `/product/${variantProduct.id}` : `/product/${product.id}`}
+                  href={href}
                   onClick={(e) => {
                     e.stopPropagation()
-                    if (hasVariant) {
-                      e.preventDefault()
-                      router.push(`/product/${variantProduct.id}`)
-                    }
                   }}
                   onMouseEnter={(e) => {
                     e.stopPropagation()
@@ -374,18 +383,7 @@ export default function ProductCard({
                         : 'border-brand-gray-300 hover:border-brand-gray-400'
                   }`}
                   style={{
-                    backgroundColor: color.toLowerCase() === 'white' ? '#fff' : 
-                                    color.toLowerCase() === 'black' ? '#000' :
-                                    color.toLowerCase() === 'red' ? '#ef4444' :
-                                    color.toLowerCase() === 'blue' ? '#3b82f6' :
-                                    color.toLowerCase() === 'green' ? '#22c55e' :
-                                    color.toLowerCase() === 'yellow' ? '#eab308' :
-                                    color.toLowerCase() === 'pink' ? '#ec4899' :
-                                    color.toLowerCase() === 'purple' ? '#a855f7' :
-                                    color.toLowerCase() === 'orange' ? '#f97316' :
-                                    color.toLowerCase() === 'brown' ? '#a16207' :
-                                    color.toLowerCase() === 'gray' ? '#6b7280' :
-                                    color.toLowerCase() === 'beige' ? '#f5f5dc' : '#ccc',
+                    backgroundColor: getColorHex(color),
                   }}
                   title={color}
                   aria-label={`View ${product.name} in ${color}`}
@@ -443,8 +441,8 @@ export default function ProductCard({
                   key={i}
                   className={`w-3 h-3 ${
                     i < Math.floor(product.rating || 0)
-                      ? 'text-yellow-400 fill-current'
-                      : 'text-brand-gray-300'
+                      ? 'text-star-filled fill-current'
+                      : 'text-star-empty'
                   }`}
                   fill="currentColor"
                   viewBox="0 0 20 20"
@@ -481,7 +479,7 @@ export default function ProductCard({
 
         {/* Promotional Message */}
         {currentDisplayVariant.promotionalMessage && (
-          <p className="text-xs text-green-600 font-medium mt-2 relative z-20">
+          <p className="text-xs text-success font-medium mt-2 relative z-20">
             {currentDisplayVariant.promotionalMessage}
           </p>
         )}

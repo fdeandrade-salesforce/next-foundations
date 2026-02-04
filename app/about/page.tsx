@@ -38,7 +38,7 @@ export default function AboutPage() {
                   Built for movement. Designed for everyday life.
                 </h2>
                 <p className="text-body-lg text-brand-gray-700 leading-relaxed mb-4">
-                  Market Street was founded on a simple belief: great design should serve your life, not complicate it. We&apos;re inspired by the rhythm of urban living—the way people move through cities, create spaces, and build routines. Our work begins with understanding how objects fit into real lives, not just how they look in isolation.
+                  Salesforce Foundations was founded on a simple belief: great design should serve your life, not complicate it. We&apos;re inspired by the rhythm of urban living—the way people move through cities, create spaces, and build routines. Our work begins with understanding how objects fit into real lives, not just how they look in isolation.
                 </p>
                 <p className="text-body-lg text-brand-gray-700 leading-relaxed mb-4">
                   Every decision we make—from material selection to form to function—starts with a question: Does this make life better? We design for versatility, durability, and timelessness because we believe the best objects are the ones you reach for daily, the ones that become part of your story without demanding attention.
@@ -219,7 +219,7 @@ export default function AboutPage() {
                   A Global Brand, a Street-Level Soul
                 </h2>
                 <p className="text-body-lg text-brand-gray-700 leading-relaxed mb-6">
-                  Market Street draws from global design movements while staying grounded in the real needs of everyday life. We&apos;re inspired by international design excellence, but we build for the person navigating their morning routine, creating their space, and living their life. This balance—between global vision and local understanding—defines who we are.
+                  Salesforce Foundations draws from global design movements while staying grounded in the real needs of everyday life. We&apos;re inspired by international design excellence, but we build for the person navigating their morning routine, creating their space, and living their life. This balance—between global vision and local understanding—defines who we are.
                 </p>
                 <p className="text-body-lg text-brand-gray-700 leading-relaxed mb-8">
                   Our guiding principle is simple: <strong className="font-medium text-brand-black">Make commerce feel natural.</strong> We believe the best brands don&apos;t just sell products—they become part of your story, understand your needs, and grow with you. That&apos;s the future we&apos;re building, one thoughtful interaction at a time.

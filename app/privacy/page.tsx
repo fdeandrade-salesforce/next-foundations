@@ -31,7 +31,7 @@ export default function PrivacyPage() {
           {/* Introduction */}
           <section className="mb-16 md:mb-24">
             <p className="text-body-lg text-brand-gray-700 leading-relaxed mb-6">
-              At Market Street, we respect your privacy and are committed to protecting your personal information. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our website and use our services.
+              At Salesforce Foundations, we respect your privacy and are committed to protecting your personal information. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our website and use our services.
             </p>
             <p className="text-body-lg text-brand-gray-700 leading-relaxed">
               By using our website, you agree to the collection and use of information in accordance with this policy.

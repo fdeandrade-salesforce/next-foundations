@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document summarizes the end-to-end Supabase data provider implementation for the Market Street e-commerce application.
+This document summarizes the end-to-end Supabase data provider implementation for the Salesforce Foundations e-commerce application.
 
 ## Files Created/Modified
 

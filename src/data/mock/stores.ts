@@ -10,7 +10,7 @@ import { Store } from '../../types'
 export const mockStores: Store[] = [
   {
     id: 'store-1',
-    name: 'Market Street - San Francisco',
+    name: 'Salesforce Foundations - San Francisco',
     address: '415 Mission Street',
     city: 'San Francisco',
     state: 'CA',
@@ -26,7 +26,7 @@ export const mockStores: Store[] = [
   },
   {
     id: 'store-2',
-    name: 'Market Street - New York',
+    name: 'Salesforce Foundations - New York',
     address: '123 Broadway',
     city: 'New York',
     state: 'NY',
@@ -42,7 +42,7 @@ export const mockStores: Store[] = [
   },
   {
     id: 'store-3',
-    name: 'Market Street - Los Angeles',
+    name: 'Salesforce Foundations - Los Angeles',
     address: '456 Sunset Boulevard',
     city: 'Los Angeles',
     state: 'CA',
@@ -58,7 +58,7 @@ export const mockStores: Store[] = [
   },
   {
     id: 'store-4',
-    name: 'Market Street - Chicago',
+    name: 'Salesforce Foundations - Chicago',
     address: '789 Michigan Avenue',
     city: 'Chicago',
     state: 'IL',
@@ -74,7 +74,7 @@ export const mockStores: Store[] = [
   },
   {
     id: 'store-5',
-    name: 'Market Street - Seattle',
+    name: 'Salesforce Foundations - Seattle',
     address: '100 Pike Street',
     city: 'Seattle',
     state: 'WA',
@@ -88,7 +88,7 @@ export const mockStores: Store[] = [
   },
   {
     id: 'store-6',
-    name: 'Market Street - Austin',
+    name: 'Salesforce Foundations - Austin',
     address: '200 Congress Avenue',
     city: 'Austin',
     state: 'TX',
@@ -104,7 +104,7 @@ export const mockStores: Store[] = [
   },
   {
     id: 'store-7',
-    name: 'Market Street - Miami',
+    name: 'Salesforce Foundations - Miami',
     address: '300 Lincoln Road',
     city: 'Miami Beach',
     state: 'FL',
@@ -120,7 +120,7 @@ export const mockStores: Store[] = [
   },
   {
     id: 'store-8',
-    name: 'Market Street - Boston',
+    name: 'Salesforce Foundations - Boston',
     address: '400 Newbury Street',
     city: 'Boston',
     state: 'MA',

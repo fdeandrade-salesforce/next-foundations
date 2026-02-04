@@ -20,6 +20,10 @@ export interface CartItem {
   storeAddress?: string
   shippingAddress?: string
   isAvailableAtStore?: boolean
+  isSurpriseGift?: boolean
+  isGift?: boolean
+  isBOGO?: boolean
+  bogoPromotionId?: string
 }
 
 interface MiniCartProps {
@@ -90,7 +94,7 @@ export default function MiniCart({
   
   // Group items by fulfillment method
   const pickupItems = items.filter(item => item.fulfillmentMethod === 'pickup')
-  const deliveryItems = items.filter(item => item.fulfillmentMethod === 'delivery')
+  const deliveryItems = items.filter(item => item.fulfillmentMethod === 'delivery' || !item.fulfillmentMethod)
   const selectedStoreId = pickupItems.length > 0 ? pickupItems[0]?.storeId : '1'
 
   const [allProducts, setAllProducts] = useState<Product[]>([])

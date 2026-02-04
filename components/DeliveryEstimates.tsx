@@ -314,6 +314,7 @@ export default function DeliveryEstimates({ initialZip = '', onZipChange, onResu
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
+                aria-hidden="true"
               >
                 <path
                   strokeLinecap="round"
@@ -327,7 +328,8 @@ export default function DeliveryEstimates({ initialZip = '', onZipChange, onResu
                 <button
                   onClick={handleCalculate}
                   disabled={isButtonDisabled}
-                  className="mt-2 text-sm text-red-700 hover:text-red-800 underline font-medium"
+                  className="mt-2 text-sm text-red-700 hover:text-red-800 underline font-medium focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 rounded"
+                  aria-label="Retry calculating delivery estimates"
                 >
                   Retry
                 </button>
@@ -343,6 +345,7 @@ export default function DeliveryEstimates({ initialZip = '', onZipChange, onResu
           id="delivery-result"
           role="status"
           aria-live="polite"
+          aria-label="Delivery estimate calculated successfully"
           className="mt-2 bg-green-50 border border-green-200 rounded-lg p-3"
         >
           <div className="flex items-start gap-2">
@@ -351,6 +354,7 @@ export default function DeliveryEstimates({ initialZip = '', onZipChange, onResu
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
+              aria-hidden="true"
             >
               <path
                 strokeLinecap="round"
@@ -376,11 +380,8 @@ export default function DeliveryEstimates({ initialZip = '', onZipChange, onResu
                 >
                   {result.shippingCostText}
                 </span>
-                {result.shippingCost.type === 'free' && (
-                  <span className="ml-1.5 text-xs text-green-600">✓</span>
-                )}
                 {result.shippingCost.type === 'unavailable' && (
-                  <span className="ml-1.5 text-xs text-orange-600">⚠</span>
+                  <span className="ml-1.5 text-xs text-orange-600" aria-label="Shipping unavailable to this location" role="img">⚠</span>
                 )}
               </p>
             </div>

@@ -19,6 +19,8 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
+  const [agreeToTerms, setAgreeToTerms] = useState(false)
+  const [marketingConsent, setMarketingConsent] = useState(false)
 
   useEffect(() => {
     if (isOpen) {
@@ -93,14 +95,14 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
     <div className="fixed inset-0 z-50 overflow-y-auto">
       {/* Backdrop */}
       <div 
-        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+        className="fixed inset-0 backdrop-default transition-opacity"
         onClick={onClose}
       />
 
       {/* Modal */}
       <div className="flex min-h-full items-center justify-center p-4">
         <div 
-          className="relative bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-hidden"
+          className="relative bg-card rounded-modal shadow-modal max-w-md w-full max-h-[90vh] overflow-hidden"
           style={{ animation: 'scale-in 0.2s ease-out forwards' }}
         >
           {/* Close Button */}
@@ -120,7 +122,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
             <div className="flex items-center justify-center mb-4">
               <img 
                 src="/images/logo.svg" 
-                alt="Market Street" 
+                alt="Salesforce Foundations" 
                 className="h-12 w-auto"
               />
             </div>
@@ -130,7 +132,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
             <p className="text-sm text-brand-gray-600 mt-1">
               {activeTab === 'signin' 
                 ? 'Sign in to access your account' 
-                : 'Join Market Street for exclusive benefits'}
+                : 'Join Salesforce Foundations for exclusive benefits'}
             </p>
           </div>
 
@@ -384,6 +386,8 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                   <input
                     type="checkbox"
                     id="terms"
+                    checked={agreeToTerms}
+                    onChange={(e) => setAgreeToTerms(e.target.checked)}
                     required
                     className="mt-1 w-4 h-4 rounded border-brand-gray-300 text-brand-blue-500 focus:ring-brand-blue-500"
                   />
@@ -392,6 +396,28 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                     <a href="/terms" className="text-brand-blue-500 hover:underline">Terms of Service</a>
                     {' '}and{' '}
                     <a href="/privacy" className="text-brand-blue-500 hover:underline">Privacy Policy</a>
+                  </label>
+                </div>
+
+                {/* Marketing Consent */}
+                <div className="bg-brand-gray-50 border border-brand-gray-200 rounded-lg p-4">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={marketingConsent}
+                      onChange={(e) => setMarketingConsent(e.target.checked)}
+                      className="w-5 h-5 mt-0.5 border-brand-gray-300 rounded text-brand-blue-500 focus:ring-brand-blue-500 flex-shrink-0"
+                    />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-brand-black">
+                        I wish to receive product updates, news and promotions from Market Street.
+                      </p>
+                      <p className="text-xs text-brand-gray-500 mt-1">
+                        By clicking below and placing your order, you agree (i) to make your purchase from Salesforce as merchant of record for this transaction, subject to Salesforce&apos;s{' '}
+                        <a href="/terms" className="text-brand-blue-500 hover:underline">Terms & Conditions</a>; (ii) that your information will be handled by Salesforce in accordance with the{' '}
+                        <a href="/privacy" className="text-brand-blue-500 hover:underline">Salesforce Privacy Policy</a>.
+                      </p>
+                    </div>
                   </label>
                 </div>
 

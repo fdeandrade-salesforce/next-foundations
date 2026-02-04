@@ -9,9 +9,10 @@ interface ProductGridProps {
   onUnifiedAction?: (product: Product) => void
   onAddToCart?: (product: Product) => void
   onQuickView?: (product: Product) => void
-  onAddToWishlist?: (product: Product) => void
+  onAddToWishlist?: (product: Product, size?: string, color?: string) => void
   showQuickAdd?: boolean
   wishlistIds?: string[]
+  allProducts?: Product[]
 }
 
 export default function ProductGrid({ 
@@ -24,6 +25,7 @@ export default function ProductGrid({
   onAddToWishlist,
   showQuickAdd = true,
   wishlistIds = [],
+  allProducts = [],
 }: ProductGridProps) {
   const gridCols = {
     2: 'grid-cols-2',
@@ -51,6 +53,7 @@ export default function ProductGrid({
             onAddToWishlist={onAddToWishlist}
             showQuickAdd={showQuickAdd}
             isInWishlist={wishlistIds.includes(product.id)}
+            allProducts={allProducts.length > 0 ? allProducts : products}
           />
         ))}
       </div>

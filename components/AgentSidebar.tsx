@@ -78,7 +78,7 @@ export default function AgentSidebar({ isOpen, onClose }: AgentSidebarProps) {
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-brand-gray-200">
-          <h2 className="text-base font-semibold text-brand-black">Market Street Personal Assistant</h2>
+          <h2 className="text-base font-semibold text-brand-black">Salesforce Foundations Personal Assistant</h2>
           <button
             onClick={onClose}
             className="p-1.5 text-brand-gray-500 hover:text-brand-black transition-colors rounded-lg hover:bg-brand-gray-100"

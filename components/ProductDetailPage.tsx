@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Product } from './ProductListingPage'
 import ProductCard from './ProductCard'
 import Navigation from './Navigation'
@@ -18,10 +19,21 @@ import ReturnsWarrantyModal from './ReturnsWarrantyModal'
 import PayPalModal from './PayPalModal'
 import SizeGuideModal from './SizeGuideModal'
 import { addToCart } from '../lib/cart'
+import { toggleWishlist, getWishlistIds, isInWishlist as checkIsInWishlist } from '../lib/wishlist'
 import QuickViewModal from './QuickViewModal'
 import NotifyMeModal from './NotifyMeModal'
 import DeliveryEstimates, { DeliveryEstimateState } from './DeliveryEstimates'
 import { getReviewRepo } from '../src/data'
+import MobileAddToCartButton from './MobileAddToCartButton'
+import {
+  PDPProduct,
+  VariantGroup,
+  VariantOption,
+  normalizeOptionValue,
+  resolveCurrentVariant,
+  findExactMatchingVariant,
+  getVariantOptionValue,
+} from '../src/lib/variantResolution'
 
 // Media item type for gallery
 interface MediaItem {
@@ -31,27 +43,14 @@ interface MediaItem {
   alt?: string
 }
 
-// Extended product type for PDP
-interface PDPProduct extends Product {
-  description?: string
-  keyBenefits?: string[]
-  ingredients?: string[]
-  usageInstructions?: string[]
-  careInstructions?: string[]
-  technicalSpecs?: Record<string, string>
-  scents?: string[]
-  capacities?: string[]
-  deliveryEstimate?: string
-  returnsPolicy?: string
-  warranty?: string
-  videos?: string[]
-}
+// PDPProduct is now imported from variantResolution module
 
 interface Review {
   id: string
   author: string
   rating: number
   date: string
+  location?: string
   title: string
   content: string
   verified: boolean
@@ -61,10 +60,11 @@ interface Review {
 
 interface ProductDetailPageProps {
   product: PDPProduct
+  productVariants?: Product[] // All variants for this base product
   suggestedProducts?: Product[]
   recentlyViewed?: Product[]
   reviews?: Review[]
-  allProducts?: Product[]
+  initialSelection?: Record<string, string> // Initial selection from query params (e.g., { color: 'White', size: 'M' })
 }
 
 // Reviews are now loaded from the data layer via repository
@@ -140,27 +140,48 @@ function StarRating({ rating, size = 'md' }: { rating: number; size?: 'sm' | 'md
 
 export default function ProductDetailPage({
   product,
+  productVariants = [],
   suggestedProducts = [],
   recentlyViewed = [],
   reviews: reviewsProp,
-  allProducts = [],
+  initialSelection = {},
 }: ProductDetailPageProps) {
   const router = useRouter()
   const [reviews, setReviews] = useState<Review[]>(reviewsProp || [])
   
   // Load reviews from repository if not provided
+  // We need to load reviews for all variants of the product, not just the base product
   useEffect(() => {
     if (!reviewsProp) {
       const loadReviews = async () => {
         try {
           const reviewRepo = getReviewRepo()
-          const productReviews = await reviewRepo.getProductReviews(product.id)
+          
+          // Get reviews for the base product
+          let allReviews = await reviewRepo.getProductReviews(product.id)
+          
+          // Also get reviews for all variants if available
+          if (productVariants && productVariants.length > 0) {
+            for (const variant of productVariants) {
+              if (variant.id !== product.id) {
+                const variantReviews = await reviewRepo.getProductReviews(variant.id)
+                allReviews = [...allReviews, ...variantReviews]
+              }
+            }
+          }
+          
+          // Deduplicate reviews by ID (in case a review is associated with multiple variants)
+          const uniqueReviews = Array.from(
+            new Map(allReviews.map(r => [r.id, r])).values()
+          )
+          
           // Map repository reviews to local Review interface (remove productId for compatibility)
-          const mappedReviews: Review[] = productReviews.map((r) => ({
+          const mappedReviews: Review[] = uniqueReviews.map((r) => ({
             id: r.id,
             author: r.author,
             rating: r.rating,
             date: r.date,
+            location: r.location,
             title: r.title,
             content: r.content,
             verified: r.verified,
@@ -175,49 +196,464 @@ export default function ProductDetailPage({
       }
       loadReviews()
     }
-  }, [product.id, reviewsProp])
-  const [selectedSize, setSelectedSize] = useState<string>(product.size?.[0] || '')
-  const [selectedColor, setSelectedColor] = useState<string>(product.color || product.colors?.[0] || '')
-  const [selectedScent, setSelectedScent] = useState<string>(product.scents?.[0] || '')
-  const [selectedCapacity, setSelectedCapacity] = useState<string>(product.capacities?.[0] || 'Standard')
-  const [quantity, setQuantity] = useState(1)
-  const [currentImageIndex, setCurrentImageIndex] = useState(0)
+  }, [product.id, productVariants, reviewsProp])
+
+  // ============================================================================
+  // VARIANT SELECTION SYSTEM (Fixed to use unique option IDs)
+  // ============================================================================
   
-  // Find variant products by matching product name (same logic as ProductCard)
-  const variantProducts = useMemo(() => {
-    if (!allProducts.length || !product.colors || product.colors.length <= 1) {
-      return {}
+  /**
+   * Normalize option value for deterministic ID generation
+   * - Trims whitespace
+   * - Lowercases
+   * - Replaces spaces/underscores with hyphens
+   * - Removes duplicate hyphens
+   */
+  // normalizeOptionValue is now imported from variantResolution module
+
+  // VariantOption and VariantGroup are now imported from variantResolution module
+
+  // Build variant groups from all product variants (consolidated from all variants)
+  const variantGroups = useMemo((): VariantGroup[] => {
+    const groups: VariantGroup[] = []
+    const seenGroupKeys = new Set<string>()
+
+    // Use productVariants if provided, otherwise fall back to just the base product
+    const variantsToUse = productVariants.length > 0 ? productVariants : [product]
+
+    // Collect all unique values for each attribute across all variants
+    const sizeSet = new Set<string>()
+    const colorSet = new Set<string>()
+    const capacitySet = new Set<string>()
+    const scentSet = new Set<string>()
+
+    variantsToUse.forEach((variant) => {
+      const pdpVariant = variant as PDPProduct
+      if (pdpVariant.size) pdpVariant.size.forEach(s => sizeSet.add(s))
+      if (pdpVariant.color) colorSet.add(pdpVariant.color)
+      if (pdpVariant.colors) pdpVariant.colors.forEach(c => colorSet.add(c))
+      if (pdpVariant.capacities) pdpVariant.capacities.forEach(c => capacitySet.add(c))
+      if (pdpVariant.scents) pdpVariant.scents.forEach(s => scentSet.add(s))
+    })
+
+    // Size group
+    if (sizeSet.size > 0) {
+      const groupKey = 'size'
+      if (seenGroupKeys.has(groupKey)) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`[PDP] Duplicate variant group detected: "${groupKey}"`)
+        }
+      } else {
+        seenGroupKeys.add(groupKey)
+        const seenOptionIds = new Set<string>()
+        const options: VariantOption[] = Array.from(sizeSet).map((value) => {
+          const optionId = `${groupKey}-${normalizeOptionValue(value)}`
+          if (seenOptionIds.has(optionId)) {
+            if (process.env.NODE_ENV === 'development') {
+              console.warn(`[PDP] Duplicate option ID detected: "${optionId}" in group "${groupKey}"`)
+            }
+          } else {
+            seenOptionIds.add(optionId)
+          }
+          return { id: optionId, value }
+        })
+        groups.push({ key: groupKey, label: 'Size', options })
+      }
+    }
+
+    // Color group
+    if (colorSet.size > 0) {
+      const groupKey = 'color'
+      if (seenGroupKeys.has(groupKey)) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`[PDP] Duplicate variant group detected: "${groupKey}"`)
+        }
+      } else {
+        seenGroupKeys.add(groupKey)
+        const seenOptionIds = new Set<string>()
+        const options: VariantOption[] = Array.from(colorSet).map((value) => {
+          const optionId = `${groupKey}-${normalizeOptionValue(value)}`
+          if (seenOptionIds.has(optionId)) {
+            if (process.env.NODE_ENV === 'development') {
+              console.warn(`[PDP] Duplicate option ID detected: "${optionId}" in group "${groupKey}"`)
+            }
+          } else {
+            seenOptionIds.add(optionId)
+          }
+          return { id: optionId, value }
+        })
+        groups.push({ key: groupKey, label: 'Color', options })
+      }
+    }
+
+    // Capacity group
+    if (capacitySet.size > 0) {
+      const groupKey = 'capacity'
+      if (seenGroupKeys.has(groupKey)) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`[PDP] Duplicate variant group detected: "${groupKey}"`)
+        }
+      } else {
+        seenGroupKeys.add(groupKey)
+        const seenOptionIds = new Set<string>()
+        const options: VariantOption[] = Array.from(capacitySet).map((value) => {
+          const optionId = `${groupKey}-${normalizeOptionValue(value)}`
+          if (seenOptionIds.has(optionId)) {
+            if (process.env.NODE_ENV === 'development') {
+              console.warn(`[PDP] Duplicate option ID detected: "${optionId}" in group "${groupKey}"`)
+            }
+          } else {
+            seenOptionIds.add(optionId)
+          }
+          return { id: optionId, value }
+        })
+        groups.push({ key: groupKey, label: 'Capacity', options })
+      }
+    }
+
+    // Scent group
+    if (scentSet.size > 0) {
+      const groupKey = 'scent'
+      if (seenGroupKeys.has(groupKey)) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`[PDP] Duplicate variant group detected: "${groupKey}"`)
+        }
+      } else {
+        seenGroupKeys.add(groupKey)
+        const seenOptionIds = new Set<string>()
+        const options: VariantOption[] = Array.from(scentSet).map((value) => {
+          const optionId = `${groupKey}-${normalizeOptionValue(value)}`
+          if (seenOptionIds.has(optionId)) {
+            if (process.env.NODE_ENV === 'development') {
+              console.warn(`[PDP] Duplicate option ID detected: "${optionId}" in group "${groupKey}"`)
+            }
+          } else {
+            seenOptionIds.add(optionId)
+          }
+          return { id: optionId, value }
+        })
+        groups.push({ key: groupKey, label: 'Scent', options })
+      }
+    }
+
+    return groups
+  }, [product, productVariants])
+
+  // Initialize selected options with priority: query params > first in-stock variant > first variant
+  const getInitialSelectedOptions = (): Record<string, string> => {
+    const selected: Record<string, string> = {}
+    
+    // First, try to match query params
+    if (Object.keys(initialSelection).length > 0) {
+      for (const [groupKey, value] of Object.entries(initialSelection)) {
+        const group = variantGroups.find((g) => g.key === groupKey)
+        if (group) {
+          // Find option by value (case-insensitive)
+          const option = group.options.find(
+            (opt) => normalizeOptionValue(opt.value) === normalizeOptionValue(value)
+          )
+          if (option) {
+            selected[groupKey] = option.id
+          }
+        }
+      }
     }
     
-    const variants: Record<string, Product> = {}
-    
-    // Find products with the same name but different colors
-    allProducts.forEach((p) => {
-      if (p.name === product.name && p.color && product.colors?.includes(p.color)) {
-        variants[p.color] = p
+    // Fill in missing groups with defaults
+    variantGroups.forEach((group) => {
+      if (!selected[group.key] && group.options.length > 0) {
+        // Try to find first in-stock variant that has this option
+        const variantsToUse = productVariants.length > 0 ? productVariants : [product]
+        let foundInStock = false
+        
+        for (const option of group.options) {
+          const variantWithOption = variantsToUse.find((v) => {
+            const pdpVariant = v as PDPProduct
+            switch (group.key) {
+              case 'size':
+                return pdpVariant.size?.includes(option.value) && pdpVariant.inStock
+              case 'color':
+                return (pdpVariant.color === option.value || pdpVariant.colors?.includes(option.value)) && pdpVariant.inStock
+              case 'capacity':
+                return pdpVariant.capacities?.includes(option.value) && pdpVariant.inStock
+              case 'scent':
+                return pdpVariant.scents?.includes(option.value) && pdpVariant.inStock
+              default:
+                return false
+            }
+          })
+          
+          if (variantWithOption) {
+            selected[group.key] = option.id
+            foundInStock = true
+            break
+          }
+        }
+        
+        // If no in-stock variant found, use first option
+        if (!foundInStock) {
+          selected[group.key] = group.options[0].id
+        }
       }
     })
     
-    return variants
-  }, [allProducts, product.name, product.colors])
+    return selected
+  }
+
+  // Store selection as Record<groupKey, optionId>
+  const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>(() => getInitialSelectedOptions())
+  const [quantity, setQuantity] = useState(1)
+  const [currentImageIndex, setCurrentImageIndex] = useState(0)
+
+  // Only initialize from query params on mount - don't reset on every render
+  // This ensures selectedOptions is the single source of truth
+  useEffect(() => {
+    // Only initialize if we have query params and no existing selections
+    if (Object.keys(initialSelection).length > 0 && Object.keys(selectedOptions).length === 0) {
+      const initial = getInitialSelectedOptions()
+      setSelectedOptions(initial)
+    }
+  }, []) // Empty deps - only run on mount
+
+  // Helper to get selected value for a group
+  const getSelectedValue = (groupKey: string): string => {
+    const optionId = selectedOptions[groupKey]
+    if (!optionId) return ''
+    const group = variantGroups.find((g) => g.key === groupKey)
+    const option = group?.options.find((opt) => opt.id === optionId)
+    return option?.value || ''
+  }
+
+  // Helper to check if an option is selected
+  const isOptionSelected = (groupKey: string, optionId: string): boolean => {
+    return selectedOptions[groupKey] === optionId
+  }
+
+  // Get selected values for backward compatibility
+  const selectedSize = getSelectedValue('size')
+  const selectedColor = getSelectedValue('color')
+  const selectedCapacity = getSelectedValue('capacity')
+  const selectedScent = getSelectedValue('scent')
   
+  // Build list of all available variants from productVariants prop
+  const allVariants = useMemo(() => {
+    if (productVariants.length > 0) {
+      return productVariants.map(v => v as PDPProduct)
+    }
+    // Fallback to base product if no variants provided
+    return [product as PDPProduct]
+  }, [product, productVariants])
+
+  // Create a lookup map for variant products by color (for backward compatibility)
+  const variantProducts = useMemo(() => {
+    const variants: Record<string, Product> = {}
+    allVariants.forEach((variant) => {
+      if (variant.color) {
+        variants[variant.color] = variant
+      }
+    })
+    return variants
+  }, [allVariants])
+
+  // Convert selectedOptions (option IDs) to selectedValues (option values) for shared module
+  const getSelectedValues = (selectedOpts: Record<string, string>): Record<string, string> => {
+    const selectedValues: Record<string, string> = {}
+    variantGroups.forEach((group) => {
+      const optionId = selectedOpts[group.key]
+      if (optionId) {
+        const option = group.options.find((opt) => opt.id === optionId)
+        if (option) {
+          selectedValues[group.key] = option.value
+        }
+      }
+    })
+    return selectedValues
+  }
+
+  // Find EXACT matching variant using shared module
+  const findExactMatchingVariantLocal = useMemo(() => {
+    return (selectedOpts: Record<string, string>): PDPProduct | null => {
+      const selectedValues = getSelectedValues(selectedOpts)
+      return findExactMatchingVariant(allVariants, selectedValues, variantGroups)
+    }
+  }, [allVariants, variantGroups])
+
+  // Find the best matching variant using shared module (fallback only)
+  const findBestMatchingVariantLocal = useMemo(() => {
+    return (selectedOpts: Record<string, string>): PDPProduct => {
+      const selectedValues = getSelectedValues(selectedOpts)
+      // Use resolveCurrentVariant which handles exact match first, then fallback
+      return resolveCurrentVariant(allVariants, selectedValues, product as PDPProduct, variantGroups)
+    }
+  }, [allVariants, variantGroups, product])
+
+  // Get current variant - STRICT two-step resolution: exact match first, then fallback
+  const currentVariant = useMemo(() => {
+    const selectedValues = getSelectedValues(selectedOptions)
+    
+    // Use shared resolveCurrentVariant which handles exact match first, then fallback
+    const resolved = resolveCurrentVariant(allVariants, selectedValues, product as PDPProduct, variantGroups)
+    
+    // Debug logging (dev only)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[PDP] currentVariant resolved:', {
+        variantId: resolved.id,
+        variantColor: resolved.color,
+        selectedOptions,
+        selectedValues,
+      })
+    }
+    
+    return resolved
+  }, [selectedOptions, allVariants, variantGroups, product])
+
+  // Create displayProduct - single source of truth for all variant-dependent UI
+  const displayProduct = useMemo(() => {
+    return currentVariant ?? product
+  }, [currentVariant, product])
+
+  // Handle option selection - apply user choice, then try exact match, then auto-fill only missing
+  const handleOptionSelect = (groupKey: string, optionId: string) => {
+    setSelectedOptions((prev) => {
+      // STEP 1: Apply the user's explicit selection
+      const updated = {
+        ...prev,
+        [groupKey]: optionId,
+      }
+
+      // Find the option value that was just selected
+      const group = variantGroups.find((g) => g.key === groupKey)
+      const selectedOption = group?.options.find((opt) => opt.id === optionId)
+      if (!selectedOption) return updated
+
+      // Debug logging (dev only)
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[PDP] handleOptionSelect - user clicked:', {
+          groupKey,
+          optionId,
+          optionValue: selectedOption.value,
+          selectedOptionsBefore: prev,
+          selectedOptionsAfter: updated,
+        })
+      }
+
+      // STEP 2: Try to find an exact match with the updated selection
+      const exactMatch = findExactMatchingVariantLocal(updated)
+      
+      if (exactMatch) {
+        // Exact match found - only auto-fill MISSING selections (never override user choices)
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[PDP] Exact match found after selection:', {
+            variantId: exactMatch.id,
+            variantColor: exactMatch.color,
+          })
+        }
+        
+        // Auto-fill ONLY missing selections from the exact match
+        for (const g of variantGroups) {
+          // Skip if already selected by user
+          if (updated[g.key]) continue
+
+          // Get the variant's value for this group
+          const variantValue = getVariantOptionValue(exactMatch, g.key)
+          if (variantValue) {
+            // Find the option ID for this value
+            const matchingOption = g.options.find((opt) => opt.value === variantValue)
+            if (matchingOption) {
+              updated[g.key] = matchingOption.id
+            }
+          }
+        }
+        
+        if (process.env.NODE_ENV === 'development') {
+          const finalMatch = findExactMatchingVariantLocal(updated) || findBestMatchingVariantLocal(updated)
+          console.log('[PDP] After auto-fill (exact match):', {
+            finalSelectedOptions: updated,
+            currentVariantId: finalMatch.id,
+            currentVariantColor: finalMatch.color,
+          })
+        }
+        
+        return updated
+      }
+
+      // STEP 3: No exact match - use best-match for auto-fill of MISSING selections only
+      const bestMatch = findBestMatchingVariantLocal(updated)
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[PDP] No exact match - using best-match for auto-fill:', {
+          bestMatchId: bestMatch.id,
+          bestMatchColor: bestMatch.color,
+        })
+      }
+
+      // Auto-fill ONLY missing selections from the best matching variant
+      // NEVER override explicit user selections
+      for (const g of variantGroups) {
+        // Skip if already selected by user
+        if (updated[g.key]) continue
+
+        // Get the variant's value for this group
+        const variantValue = getVariantOptionValue(bestMatch, g.key)
+        if (variantValue) {
+          // Find the option ID for this value
+          const matchingOption = g.options.find((opt) => opt.value === variantValue)
+          if (matchingOption) {
+            updated[g.key] = matchingOption.id
+          }
+        }
+      }
+
+      // Debug logging after auto-fill (dev only)
+      if (process.env.NODE_ENV === 'development') {
+        const finalMatch = findExactMatchingVariantLocal(updated) || findBestMatchingVariantLocal(updated)
+        console.log('[PDP] After auto-fill (best-match):', {
+          finalSelectedOptions: updated,
+          currentVariantId: finalMatch.id,
+          currentVariantColor: finalMatch.color,
+        })
+      }
+
+      return updated
+    })
+  }
+
+  // Sync URL query params when selectedOptions changes
+  useEffect(() => {
+    const params = new URLSearchParams()
+    
+    // Add selected values to query params
+    variantGroups.forEach((group) => {
+      const optionId = selectedOptions[group.key]
+      if (optionId) {
+        const option = group.options.find((opt) => opt.id === optionId)
+        if (option) {
+          params.set(group.key, option.value)
+        }
+      }
+    })
+
+    // Update URL without causing a navigation
+    const queryString = params.toString()
+    const newUrl = queryString 
+      ? `${window.location.pathname}?${queryString}`
+      : window.location.pathname
+    
+    if (window.location.search !== (queryString ? `?${queryString}` : '')) {
+      router.replace(newUrl, { scroll: false })
+    }
+  }, [selectedOptions, variantGroups, router])
+
   // Track if user has explicitly selected a color (different from initial)
   const [hasSelectedColor, setHasSelectedColor] = useState(false)
   
-  // Get current variant based on selected color
-  const currentVariant = useMemo(() => {
-    if (selectedColor && variantProducts[selectedColor]) {
-      return variantProducts[selectedColor] as PDPProduct
-    }
-    return product
-  }, [selectedColor, variantProducts, product])
-  
   // Track when user selects a color
   useEffect(() => {
-    if (selectedColor && selectedColor !== (product.color || product.colors?.[0])) {
+    const selectedColorValue = getSelectedValue('color')
+    if (selectedColorValue && selectedColorValue !== (product.color || product.colors?.[0])) {
       setHasSelectedColor(true)
     }
-  }, [selectedColor, product.color, product.colors])
+  }, [selectedOptions, product.color, product.colors])
   
   // Calculate price range across all variants
   const priceRange = useMemo(() => {
@@ -251,10 +687,7 @@ export default function ProductDetailPage({
     return null
   }, [product, variantProducts])
   
-  // Reset image index when variant changes
-  useEffect(() => {
-    setCurrentImageIndex(0)
-  }, [selectedColor])
+  // Reset image index when variant changes (will be updated after displayProduct is defined)
   const [showSizeGuide, setShowSizeGuide] = useState(false)
   const [showVirtualTryOn, setShowVirtualTryOn] = useState(false)
   const [showStoreLocator, setShowStoreLocator] = useState(false)
@@ -267,6 +700,61 @@ export default function ProductDetailPage({
   const [showReturnsWarrantyModal, setShowReturnsWarrantyModal] = useState(false)
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null)
   const [notifyMeProduct, setNotifyMeProduct] = useState<Product | null>(null)
+  const [wishlist, setWishlist] = useState<string[]>([])
+  
+  // Initialize wishlist from localStorage and listen for updates
+  useEffect(() => {
+    // Load initial wishlist
+    setWishlist(getWishlistIds())
+    
+    // Listen for wishlist updates from other components
+    const handleWishlistUpdate = () => {
+      setWishlist(getWishlistIds())
+    }
+    
+    window.addEventListener('wishlistUpdated', handleWishlistUpdate)
+    return () => {
+      window.removeEventListener('wishlistUpdated', handleWishlistUpdate)
+    }
+  }, [])
+  
+  // Mobile Add to Cart button visibility
+  const addToCartSectionRef = useRef<HTMLDivElement>(null)
+  const [showMobileAddToCart, setShowMobileAddToCart] = useState(false)
+
+  // Detect when Add to Cart section is out of viewport (mobile only)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const checkVisibility = () => {
+      // Only check on mobile screens
+      if (window.innerWidth >= 768) {
+        setShowMobileAddToCart(false)
+        return
+      }
+
+      if (!addToCartSectionRef.current) {
+        setShowMobileAddToCart(false)
+        return
+      }
+
+      const rect = addToCartSectionRef.current.getBoundingClientRect()
+      const isVisible = rect.top < window.innerHeight && rect.bottom > 0
+      
+      // Show mobile button when Add to Cart section is not visible
+      setShowMobileAddToCart(!isVisible)
+    }
+
+    // Check on mount and scroll
+    checkVisibility()
+    window.addEventListener('scroll', checkVisibility, { passive: true })
+    window.addEventListener('resize', checkVisibility)
+
+    return () => {
+      window.removeEventListener('scroll', checkVisibility)
+      window.removeEventListener('resize', checkVisibility)
+    }
+  }, [])
 
   // Helper function to check if product has variants
   const hasVariants = (product: Product): boolean => {
@@ -297,9 +785,17 @@ export default function ProductDetailPage({
     console.log(`Notify ${email} when ${notifyMeProduct?.name} is available`)
   }
 
-  const handleAddToWishlist = (product: Product) => {
-    // Wishlist functionality can be added here
-    console.log('Add to wishlist:', product.id)
+  // For product cards in recommendations - variant info passed from QuickViewModal
+  const handleAddToWishlist = (product: Product, size?: string, color?: string) => {
+    // Only pass size/color if they were explicitly selected (from QuickViewModal)
+    toggleWishlist(product, size, color, size || color ? 'pdp' : 'card')
+    // State will be updated via the wishlistUpdated event listener
+  }
+  
+  // For main PDP wishlist button - includes selected variants
+  const handleAddToWishlistWithVariants = () => {
+    toggleWishlist(displayProduct, selectedSize, selectedColor, 'pdp')
+    // State will be updated via the wishlistUpdated event listener
   }
 
   // Share functionality
@@ -340,9 +836,39 @@ export default function ProductDetailPage({
     pickupTime: string | null
   } | null>(null)
 
-  // Use currentVariant for images and pricing
-  const images = currentVariant.images || [currentVariant.image]
-  const videos = (currentVariant as PDPProduct).videos || []
+  // Debug logging when displayProduct changes (dev only)
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[PDP] displayProduct changed:', {
+        id: displayProduct.id,
+        color: displayProduct.color,
+        imagesCount: displayProduct.images?.length || 0,
+        hasImages: !!(displayProduct.images && displayProduct.images.length > 0),
+        price: displayProduct.price,
+        inStock: displayProduct.inStock,
+        stockQuantity: displayProduct.stockQuantity,
+      })
+    }
+  }, [displayProduct.id])
+
+  // Get images from displayProduct (variant images if available, else base product images)
+  const images = useMemo(() => {
+    // Prefer variant's own images
+    if (displayProduct.images && displayProduct.images.length > 0) {
+      return displayProduct.images
+    }
+    // Fallback to base product images
+    if (displayProduct.image) {
+      return [displayProduct.image]
+    }
+    // Final fallback
+    return []
+  }, [displayProduct.images, displayProduct.image])
+
+  // Get videos from displayProduct
+  const videos = useMemo(() => {
+    return (displayProduct as PDPProduct).videos || []
+  }, [(displayProduct as PDPProduct).videos])
   
   // Mapping of product IDs to their 3D model GLB files
   const product3DModels: Record<string, string> = {
@@ -354,37 +880,50 @@ export default function ProductDetailPage({
     'vertical-set': 'Vertical Set.glb',
   }
   
-  // Check if this product has a 3D model - use currentVariant.id to get the correct 3D model for the variant
-  const has3DModel = product3DModels[currentVariant.id] !== undefined
-  const model3DFile = has3DModel ? product3DModels[currentVariant.id] : null
+  // Check if this product has a 3D model - use displayProduct.id
+  const has3DModel = useMemo(() => {
+    return product3DModels[displayProduct.id] !== undefined
+  }, [displayProduct.id])
+  
+  const model3DFile = useMemo(() => {
+    return has3DModel ? product3DModels[displayProduct.id] : null
+  }, [has3DModel, displayProduct.id])
   
   // Combine images, videos, and 3D model into a single media array
   // 3D model is added last
-  const mediaItems: MediaItem[] = [
-    ...images.map((src): MediaItem => ({ type: 'image', src, alt: currentVariant.name })),
-    ...videos.map((src): MediaItem => ({ type: 'video', src, thumbnail: src })),
-    // Add 3D model last if available
-    ...(has3DModel && model3DFile ? [{ 
-      type: 'model3d' as const, 
-      src: `/models/${model3DFile}`, 
-      alt: `${currentVariant.name} 3D Model`,
-      thumbnail: images[0] // Use first product image as thumbnail
-    }] : []),
-  ]
+  const mediaItems: MediaItem[] = useMemo(() => {
+    return [
+      ...images.map((src): MediaItem => ({ type: 'image', src, alt: displayProduct.name })),
+      ...videos.map((src): MediaItem => ({ type: 'video', src, thumbnail: src })),
+      // Add 3D model last if available
+      ...(has3DModel && model3DFile ? [{ 
+        type: 'model3d' as const, 
+        src: `/models/${model3DFile}`, 
+        alt: `${displayProduct.name} 3D Model`,
+        thumbnail: images[0] // Use first product image as thumbnail
+      }] : []),
+    ]
+  }, [images, videos, has3DModel, model3DFile, displayProduct.name])
   
-  // Use product-level discount if provided, otherwise calculate from price difference
-  const hasDiscount = currentVariant.discountPercentage !== undefined 
-    ? currentVariant.discountPercentage > 0
-    : currentVariant.originalPrice && currentVariant.originalPrice > currentVariant.price
+  // Use displayProduct-level discount if provided, otherwise calculate from price difference
+  const hasDiscount = useMemo(() => {
+    return displayProduct.discountPercentage !== undefined 
+      ? displayProduct.discountPercentage > 0
+      : displayProduct.originalPrice && displayProduct.originalPrice > displayProduct.price
+  }, [displayProduct.discountPercentage, displayProduct.originalPrice, displayProduct.price])
   
-  const discountPercentage = currentVariant.discountPercentage !== undefined
-    ? currentVariant.discountPercentage
-    : hasDiscount && currentVariant.originalPrice
-      ? Math.round(((currentVariant.originalPrice - currentVariant.price) / currentVariant.originalPrice) * 100)
-      : null
+  const discountPercentage = useMemo(() => {
+    return displayProduct.discountPercentage !== undefined
+      ? displayProduct.discountPercentage
+      : hasDiscount && displayProduct.originalPrice
+        ? Math.round(((displayProduct.originalPrice - displayProduct.price) / displayProduct.originalPrice) * 100)
+        : null
+  }, [displayProduct.discountPercentage, displayProduct.originalPrice, displayProduct.price, hasDiscount])
   
   // Percent-off badge value (can be different from calculated discount)
-  const percentOffBadge = currentVariant.percentOff !== undefined ? currentVariant.percentOff : discountPercentage
+  const percentOffBadge = useMemo(() => {
+    return displayProduct.percentOff !== undefined ? displayProduct.percentOff : discountPercentage
+  }, [displayProduct.percentOff, discountPercentage])
 
   // Badge logic (same as ProductCard)
   const getBadgeLabel = (badge: string) => {
@@ -409,85 +948,95 @@ export default function ProductDetailPage({
     return colors[badge] || 'bg-brand-gray-800'
   }
 
-  const badges = currentVariant.badges || []
-  if (currentVariant.isNew) badges.push('new')
-  if (currentVariant.isBestSeller) badges.push('best-seller')
-  if (currentVariant.isOnlineOnly) badges.push('online-only')
-  if (currentVariant.isLimitedEdition) badges.push('limited-edition')
-  if (hasDiscount) badges.push('promotion')
+  const badges = useMemo(() => {
+    const badgeList = displayProduct.badges || []
+    if (displayProduct.isNew) badgeList.push('new')
+    if (displayProduct.isBestSeller) badgeList.push('best-seller')
+    if (displayProduct.isOnlineOnly) badgeList.push('online-only')
+    if (displayProduct.isLimitedEdition) badgeList.push('limited-edition')
+    if (hasDiscount) badgeList.push('promotion')
+    return badgeList
+  }, [displayProduct.badges, displayProduct.isNew, displayProduct.isBestSeller, displayProduct.isOnlineOnly, displayProduct.isLimitedEdition, hasDiscount])
   
   // State for video playback
   const [isVideoPlaying, setIsVideoPlaying] = useState(false)
   const videoRef = React.useRef<HTMLVideoElement>(null)
 
-  // Stock status - use currentVariant for accurate stock info
-  const getStockStatus = () => {
-    if (!currentVariant.inStock || currentVariant.stockQuantity === 0) {
+  // Stock status - use displayProduct for accurate stock info
+  const stockStatus = useMemo(() => {
+    if (!displayProduct.inStock || displayProduct.stockQuantity === 0) {
       return { label: 'Out of Stock', color: 'text-red-600', bgColor: 'bg-red-50', dotColor: 'bg-red-500' }
     }
-    if (currentVariant.stockQuantity && currentVariant.stockQuantity <= 10) {
-      return { label: `Low Stock - Only ${currentVariant.stockQuantity} left`, color: 'text-orange-600', bgColor: 'bg-orange-50', dotColor: 'bg-orange-500' }
+    if (displayProduct.stockQuantity && displayProduct.stockQuantity <= 10) {
+      return { label: `Low Stock - Only ${displayProduct.stockQuantity} left`, color: 'text-orange-600', bgColor: 'bg-orange-50', dotColor: 'bg-orange-500' }
     }
     return { label: 'In Stock', color: 'text-green-600', bgColor: 'bg-green-50', dotColor: 'bg-green-500' }
-  }
-
-  const stockStatus = getStockStatus()
+  }, [displayProduct.inStock, displayProduct.stockQuantity])
 
   // Generate breadcrumbs
+  const normalizeUrl = (str: string) => {
+    return str.toLowerCase().replace(/\s+/g, '-')
+  }
+  
   const breadcrumbs = [
-    { label: 'Breadcrumbs', href: '/' },
-    { label: product.category, href: `/${product.category.toLowerCase()}` },
-    { label: product.subcategory, href: `/${product.category.toLowerCase()}/${product.subcategory.toLowerCase()}` },
+    { label: 'Home', href: '/' },
+    { label: product.category, href: `/${normalizeUrl(product.category)}` },
+    { label: product.subcategory, href: `/${normalizeUrl(product.category)}/${normalizeUrl(product.subcategory)}` },
     { label: product.name, href: '#' },
   ]
 
-  // Default product details
-  const description = product.description || `Crafted from premium leather with a modern twist on the classic contrast boot silhouette. These ankle boots feature a sleek profile with functional lace-up closure and side zip for easy wear. Perfect for both casual and elevated looks.`
+  // Default product details - contextual to geometric forms
+  const description = product.description || `A masterfully crafted geometric form designed to bring balance and elegance to any space. Each piece is precision-manufactured using premium composite materials, featuring clean lines and perfect proportions that catch and reflect light beautifully throughout the day.`
 
   const keyBenefits = product.keyBenefits || [
-    'Hydration',
-    'Anti-aging',
-    'Brightening',
+    'Precision-crafted geometry',
+    'Premium composite material',
+    'Timeless minimalist design',
   ]
 
   const features = [
-    'Premium full-grain leather upper',
-    'Cushioned leather insole',
-    'Anti-aging and ceratontier tight crthenis',
-    'Durable rubber outsole',
-    'Lace-up front',
-    "1.5\" heel height",
+    'High-density composite construction',
+    'UV-resistant matte finish',
+    'Weighted base for stability',
+    'Hand-inspected quality control',
   ]
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className={`min-h-screen bg-white ${showMobileAddToCart ? 'pb-20 md:pb-0' : ''}`}>
       <AnnouncementBar />
       <Navigation />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Breadcrumbs */}
         <nav className="flex items-center gap-2 text-sm text-brand-gray-500 mb-6">
-          {breadcrumbs.map((crumb, idx) => (
-            <React.Fragment key={idx}>
-              {idx > 0 && <span>&gt;</span>}
-              <a href={crumb.href} className="hover:text-brand-blue-500 transition-colors">
-                {crumb.label}
-              </a>
-            </React.Fragment>
-          ))}
+          {breadcrumbs.map((crumb, idx) => {
+            const isLast = idx === breadcrumbs.length - 1
+            return (
+              <React.Fragment key={idx}>
+                {idx > 0 && <span>&gt;</span>}
+                {isLast ? (
+                  <span className="text-brand-black">{crumb.label}</span>
+                ) : (
+                  <Link href={crumb.href} className="hover:text-brand-blue-500 transition-colors">
+                    {crumb.label}
+                  </Link>
+                )}
+              </React.Fragment>
+            )
+          })}
         </nav>
 
         {/* Main Product Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
           {/* Left Column - Image Gallery (Sticky) */}
-          <div className="lg:self-start lg:sticky lg:top-4">
+          <div className="lg:self-start lg:sticky lg:top-20">
             <div className="space-y-4">
               {/* Main Image/Video/3D Model Display */}
               <div className="relative">
                 {/* Badges - positioned like product cards */}
                 <div className="absolute top-3 left-3 flex flex-col items-start gap-1.5 z-20">
                   {/* Out of Stock Badge - Show first if product is out of stock */}
-                  {!currentVariant.inStock && (
+                  {!displayProduct.inStock && (
                     <span className="bg-red-600 text-white px-2.5 py-1.5 text-xs font-semibold uppercase rounded-md inline-block shadow-lg">
                       Out of Stock
                     </span>
@@ -512,7 +1061,7 @@ export default function ProductDetailPage({
                   <div className="relative aspect-square bg-brand-gray-100 rounded-2xl overflow-hidden">
                     <Model3DViewer
                       src={mediaItems[currentImageIndex].src}
-                      alt={mediaItems[currentImageIndex].alt || product.name}
+                      alt={mediaItems[currentImageIndex].alt || displayProduct.name}
                       className="w-full h-full"
                       autoRotate={true}
                       cameraControls={true}
@@ -654,13 +1203,19 @@ export default function ProductDetailPage({
                 {/* Wishlist and Share Icons */}
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <button
-                    onClick={() => handleAddToWishlist(currentVariant)}
-                    className="p-2 rounded-full bg-white/90 hover:bg-white border border-brand-gray-200 hover:border-brand-gray-300 transition-all"
-                    aria-label="Add to wishlist"
+                    onClick={handleAddToWishlistWithVariants}
+                    className={`p-2 rounded-full border transition-all ${
+                      wishlist.includes(displayProduct.id)
+                        ? 'bg-red-50 border-red-200 hover:border-red-300'
+                        : 'bg-white/90 hover:bg-white border-brand-gray-200 hover:border-brand-gray-300'
+                    }`}
+                    aria-label={wishlist.includes(displayProduct.id) ? 'Remove from wishlist' : 'Add to wishlist'}
                   >
                     <svg 
-                      className="w-5 h-5 text-brand-black transition-colors" 
-                      fill="none" 
+                      className={`w-5 h-5 transition-colors ${
+                        wishlist.includes(displayProduct.id) ? 'text-red-500 fill-current' : 'text-brand-black'
+                      }`}
+                      fill={wishlist.includes(displayProduct.id) ? 'currentColor' : 'none'}
                       stroke="currentColor" 
                       viewBox="0 0 24 24"
                     >
@@ -689,9 +1244,9 @@ export default function ProductDetailPage({
                 </div>
               </div>
               {/* SKU - Accessible placement */}
-              {currentVariant.sku && (
-                <p className="text-xs text-brand-gray-500 mt-2" aria-label={`Product SKU: ${currentVariant.sku}`}>
-                  <span className="font-medium">SKU:</span> {currentVariant.sku}
+              {displayProduct.sku && (
+                <p className="text-xs text-brand-gray-500 mt-2" aria-label={`Product SKU: ${displayProduct.sku}`}>
+                  <span className="font-medium">SKU:</span> {displayProduct.sku}
                 </p>
               )}
               {/* Short Description */}
@@ -703,7 +1258,7 @@ export default function ProductDetailPage({
             </div>
 
             {/* Rating with Hover Tooltip */}
-            {currentVariant.rating !== undefined && (
+            {displayProduct.rating !== undefined && (
               <div className="relative group">
                 <button 
                   onClick={() => {
@@ -714,9 +1269,9 @@ export default function ProductDetailPage({
                   }}
                   className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer"
                 >
-                  <StarRating rating={currentVariant.rating} size="md" />
+                  <StarRating rating={displayProduct.rating} size="md" />
                   <span className="text-sm text-brand-gray-600 underline decoration-dotted underline-offset-2">
-                    {currentVariant.rating.toFixed(1)} ({currentVariant.reviewCount?.toLocaleString() || 0})
+                    {displayProduct.rating.toFixed(1)} ({displayProduct.reviewCount?.toLocaleString() || 0})
                   </span>
                 </button>
                 
@@ -724,7 +1279,7 @@ export default function ProductDetailPage({
                 <div className="absolute left-0 top-full mt-2 bg-white border border-brand-gray-200 rounded-xl shadow-xl p-4 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 w-64">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-sm font-medium text-brand-black">
-                      {currentVariant.rating.toFixed(1)} out of 5 stars
+                      {displayProduct.rating.toFixed(1)} out of 5 stars
                     </span>
                     <button 
                       onClick={(e) => {
@@ -743,9 +1298,9 @@ export default function ProductDetailPage({
                   </div>
                   
                   <div className="flex items-center gap-1 mb-2">
-                    <StarRating rating={currentVariant.rating} size="sm" />
+                    <StarRating rating={displayProduct.rating} size="sm" />
                     <span className="text-lg font-semibold text-brand-black ml-1">
-                      {currentVariant.rating.toFixed(1)} out of 5
+                      {displayProduct.rating.toFixed(1)} out of 5
                     </span>
                   </div>
                   
@@ -762,7 +1317,7 @@ export default function ProductDetailPage({
                         4: [45, 35, 10, 5, 5],
                         3: [20, 25, 30, 15, 10],
                       }
-                      const ratingFloor = Math.floor(currentVariant.rating || 4)
+                      const ratingFloor = Math.floor(displayProduct.rating || 4)
                       const dist = distributions[Math.min(5, Math.max(3, ratingFloor))] || distributions[4]
                       const percentage = dist[5 - star]
                       // Calculate count based on percentage
@@ -816,12 +1371,12 @@ export default function ProductDetailPage({
                 ) : (
                   <>
                     <span className="text-2xl font-semibold text-brand-black">
-                      ${currentVariant.price.toFixed(2)}
+                      ${displayProduct.price.toFixed(2)}
                     </span>
-                    {hasDiscount && currentVariant.originalPrice && (
+                    {hasDiscount && displayProduct.originalPrice && (
                       <>
                         <span className="text-base text-brand-gray-400 line-through">
-                          ${currentVariant.originalPrice.toFixed(2)}
+                          ${displayProduct.originalPrice.toFixed(2)}
                         </span>
                         {percentOffBadge !== null && percentOffBadge !== undefined && (
                           <span className="px-2 py-0.5 bg-brand-blue-100 text-brand-blue-700 text-xs font-medium rounded-md">
@@ -843,20 +1398,20 @@ export default function ProductDetailPage({
 
               {/* Stock Status with Progress Bar */}
               <div className="space-y-1.5">
-                {currentVariant.inStock && currentVariant.stockQuantity && currentVariant.stockQuantity > 0 ? (
+                {displayProduct.inStock && displayProduct.stockQuantity && displayProduct.stockQuantity > 0 ? (
                   <>
                     <div className="flex items-center gap-2">
                       <span className={`w-2 h-2 rounded-full ${stockStatus.dotColor}`}></span>
                       <p className={`${stockStatus.color} font-medium text-sm`}>
-                        {stockStatus.label} ({currentVariant.stockQuantity} units) ready to be shipped
+                        {stockStatus.label} ({displayProduct.stockQuantity} units) ready to be shipped
                       </p>
                     </div>
                     <div className="w-full bg-brand-gray-200 rounded-full h-1.5">
                       <div 
                         className={`h-1.5 rounded-full transition-all duration-300 ${
-                          currentVariant.stockQuantity <= 10 ? 'bg-orange-500' : 'bg-green-500'
+                          displayProduct.stockQuantity <= 10 ? 'bg-orange-500' : 'bg-green-500'
                         }`}
-                        style={{ width: `${Math.min((currentVariant.stockQuantity / 50) * 100, 100)}%` }}
+                        style={{ width: `${Math.min((displayProduct.stockQuantity / 50) * 100, 100)}%` }}
                       ></div>
                     </div>
                   </>
@@ -874,86 +1429,134 @@ export default function ProductDetailPage({
 
             {/* Variant Selection Group */}
             <div className="space-y-4">
-              {/* Size Selection */}
-              {product.size && product.size.length > 0 && (
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-medium text-brand-black">Size: {selectedSize}</label>
-                    <button
-                      onClick={() => setShowSizeGuide(true)}
-                      className="text-sm text-brand-blue-500 hover:text-brand-blue-600"
-                    >
-                      EU Size Guide
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {product.size.map((size) => (
-                      <button
-                        key={size}
-                        onClick={() => setSelectedSize(size)}
-                        className={`min-w-[44px] px-3 py-2 text-sm border transition-colors rounded-lg ${
-                          selectedSize === size
-                            ? 'bg-brand-blue-500 text-white border-brand-blue-500 shadow-sm'
-                            : 'bg-white text-brand-black border-brand-gray-300 hover:border-brand-blue-500'
-                        }`}
-                      >
-                        {size}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {/* Render variant groups dynamically */}
+              {variantGroups.map((group) => {
+                if (group.key === 'size') {
+                  return (
+                    <div key={group.key}>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-sm font-medium text-brand-black">
+                          {group.label}: {getSelectedValue(group.key)}
+                        </label>
+                        <button
+                          onClick={() => setShowSizeGuide(true)}
+                          className="text-sm text-brand-blue-500 hover:text-brand-blue-600"
+                        >
+                          EU Size Guide
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {group.options.map((option) => (
+                          <button
+                            key={option.id}
+                            onClick={() => handleOptionSelect(group.key, option.id)}
+                            className={`min-w-[44px] px-3 py-2 text-sm border transition-colors rounded-lg ${
+                              isOptionSelected(group.key, option.id)
+                                ? 'bg-brand-blue-500 text-white border-brand-blue-500 shadow-sm'
+                                : 'bg-white text-brand-black border-brand-gray-300 hover:border-brand-blue-500'
+                            }`}
+                          >
+                            {option.value}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                }
 
-              {/* Color Selection */}
-              {product.colors && product.colors.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-brand-black mb-2">
-                    Color: {selectedColor}
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {product.colors.map((color) => {
-                      const variantProduct = variantProducts[color]
-                      return (
-                      <button
-                        key={color}
-                        onClick={() => {
-                          // Navigate to the variant's URL if it exists
-                          if (variantProduct && variantProduct.id !== product.id) {
-                            router.push(`/product/${variantProduct.id}`)
-                          } else {
-                            setSelectedColor(color)
-                            setHasSelectedColor(true)
-                          }
-                        }}
-                        className={`px-3 py-2 text-sm border transition-colors rounded-lg capitalize ${
-                          selectedColor === color
-                            ? 'bg-brand-blue-500 text-white border-brand-blue-500 shadow-sm'
-                            : 'bg-white text-brand-black border-brand-gray-300 hover:border-brand-blue-500'
-                        }`}
-                      >
-                        <span className="flex items-center gap-2">
-                          <span
-                            className="w-4 h-4 rounded-full border border-brand-gray-300"
-                            style={{
-                              backgroundColor:
-                                color.toLowerCase() === 'white' ? '#fff' :
-                                color.toLowerCase() === 'black' ? '#000' :
-                                color.toLowerCase() === 'gray' ? '#6b7280' :
-                                color.toLowerCase() === 'charcoal' ? '#36454F' :
-                                color.toLowerCase() === 'silver' ? '#C0C0C0' :
-                                color.toLowerCase() === 'ivory' ? '#FFFFF0' :
-                                color.toLowerCase() === 'natural' ? '#FAF0E6' :
-                                color.toLowerCase() === 'ware' ? '#D2B48C' : '#ccc',
-                            }}
-                          />
-                          {color}
-                        </span>
-                      </button>
-                      )
-                    })}
+                if (group.key === 'color') {
+                  return (
+                    <div key={group.key}>
+                      <label className="block text-sm font-medium text-brand-black mb-2">
+                        {group.label}: {getSelectedValue(group.key)}
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {group.options.map((option) => {
+                          const variantProduct = variantProducts[option.value]
+                          return (
+                            <button
+                              key={option.id}
+                              onClick={() => {
+                                handleOptionSelect(group.key, option.id)
+                                if (group.key === 'color') {
+                                  setHasSelectedColor(true)
+                                }
+                              }}
+                              className={`px-3 py-2 text-sm border transition-colors rounded-lg capitalize ${
+                                isOptionSelected(group.key, option.id)
+                                  ? 'bg-brand-blue-500 text-white border-brand-blue-500 shadow-sm'
+                                  : 'bg-white text-brand-black border-brand-gray-300 hover:border-brand-blue-500'
+                              }`}
+                            >
+                              <span className="flex items-center gap-2">
+                                <span
+                                  className="w-4 h-4 rounded-full border border-brand-gray-300"
+                                  style={{
+                                    backgroundColor:
+                                      option.value.toLowerCase() === 'white' ? '#fff' :
+                                      option.value.toLowerCase() === 'black' ? '#000' :
+                                      option.value.toLowerCase() === 'gray' ? '#6b7280' :
+                                      option.value.toLowerCase() === 'charcoal' ? '#36454F' :
+                                      option.value.toLowerCase() === 'silver' ? '#C0C0C0' :
+                                      option.value.toLowerCase() === 'ivory' ? '#FFFFF0' :
+                                      option.value.toLowerCase() === 'natural' ? '#FAF0E6' :
+                                      option.value.toLowerCase() === 'ware' ? '#D2B48C' : '#ccc',
+                                  }}
+                                />
+                                {option.value}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                }
+
+                if (group.key === 'capacity') {
+                  return (
+                    <div key={group.key}>
+                      <label className="block text-sm font-medium text-brand-black mb-2">{group.label}</label>
+                      <div className="flex items-center gap-4">
+                        {group.options.map((option) => (
+                          <label key={option.id} className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name={group.key}
+                              checked={isOptionSelected(group.key, option.id)}
+                              onChange={() => handleOptionSelect(group.key, option.id)}
+                              className="w-4 h-4 text-brand-blue-500 focus:ring-brand-blue-500"
+                            />
+                            <span className="text-sm text-brand-black">{option.value}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                }
+
+                // Generic fallback for other groups (e.g., scent)
+                return (
+                  <div key={group.key}>
+                    <label className="block text-sm font-medium text-brand-black mb-2">{group.label}</label>
+                    <div className="flex flex-wrap gap-2">
+                      {group.options.map((option) => (
+                        <button
+                          key={option.id}
+                          onClick={() => handleOptionSelect(group.key, option.id)}
+                          className={`px-3 py-2 text-sm border transition-colors rounded-lg ${
+                            isOptionSelected(group.key, option.id)
+                              ? 'bg-brand-blue-500 text-white border-brand-blue-500 shadow-sm'
+                              : 'bg-white text-brand-black border-brand-gray-300 hover:border-brand-blue-500'
+                          }`}
+                        >
+                          {option.value}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )
+              })}
 
               {/* Virtual Try-On */}
               <button
@@ -974,29 +1577,8 @@ export default function ProductDetailPage({
                 </svg>
               </button>
 
-              {/* Capacity Selection */}
-              {product.capacities && product.capacities.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-brand-black mb-2">Capacity</label>
-                  <div className="flex items-center gap-4">
-                    {['Standard', 'Plus', 'Family Pack'].map((cap) => (
-                      <label key={cap} className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="capacity"
-                          checked={selectedCapacity === cap}
-                          onChange={() => setSelectedCapacity(cap)}
-                          className="w-4 h-4 text-brand-blue-500 focus:ring-brand-blue-500"
-                        />
-                        <span className="text-sm text-brand-black">{cap}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* Validation Message */}
-              {(!selectedSize || !selectedColor) && (
+              {variantGroups.length > 0 && variantGroups.some((group) => !selectedOptions[group.key]) && (
                 <p className="text-sm text-brand-gray-400 italic">
                   Please select all your options above
                 </p>
@@ -1004,10 +1586,24 @@ export default function ProductDetailPage({
             </div>
 
             {/* Fulfillment Options - Delivery or Pickup */}
-            <div className="grid grid-cols-2 gap-2">
+            <fieldset className="grid grid-cols-2 gap-2 border-0 p-0 m-0" role="radiogroup" aria-label="Fulfillment method">
+              <legend className="sr-only">Fulfillment method</legend>
+              
               {/* Delivery Option */}
               <button
                 onClick={() => setFulfillmentMethod('delivery')}
+                onKeyDown={(e) => {
+                  // Arrow key navigation for radio buttons
+                  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                    e.preventDefault()
+                    if (selectedStore) {
+                      setFulfillmentMethod('pickup')
+                    }
+                  }
+                }}
+                role="radio"
+                aria-checked={fulfillmentMethod === 'delivery'}
+                aria-label="Select delivery"
                 className={`flex items-start gap-2 p-3 rounded-lg border transition-colors text-left ${
                   fulfillmentMethod === 'delivery'
                     ? 'border-brand-blue-500 bg-brand-blue-50/30'
@@ -1045,77 +1641,110 @@ export default function ProductDetailPage({
               </button>
 
               {/* Pickup Option */}
-              <button
-                onClick={() => {
-                  setFulfillmentMethod('pickup')
-                  if (!selectedStore) {
-                    setShowStoreLocator(true)
-                  }
-                }}
-                className={`flex items-start gap-2 p-3 rounded-lg border transition-colors text-left ${
-                  fulfillmentMethod === 'pickup'
-                    ? 'border-brand-blue-500 bg-brand-blue-50/30'
-                    : 'border-brand-gray-200 hover:border-brand-gray-300'
-                }`}
-              >
-                {/* Radio Circle */}
-                <div className="mt-0.5 shrink-0">
-                  <div
-                    className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors ${
-                      fulfillmentMethod === 'pickup'
-                        ? 'border-brand-blue-500'
-                        : 'border-brand-gray-300'
-                    }`}
-                  >
-                    {fulfillmentMethod === 'pickup' && (
-                      <div className="w-2 h-2 rounded-full bg-brand-blue-500" />
-                    )}
+              {selectedStore ? (
+                <button
+                  onClick={() => {
+                    setFulfillmentMethod('pickup')
+                  }}
+                  onKeyDown={(e) => {
+                    // Arrow key navigation for radio buttons
+                    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                      e.preventDefault()
+                      setFulfillmentMethod('delivery')
+                    }
+                  }}
+                  role="radio"
+                  aria-checked={fulfillmentMethod === 'pickup'}
+                  aria-label="Select pickup"
+                  className={`flex items-start gap-2 p-3 rounded-lg border transition-colors text-left ${
+                    fulfillmentMethod === 'pickup'
+                      ? 'border-brand-blue-500 bg-brand-blue-50/30'
+                      : 'border-brand-gray-200 hover:border-brand-gray-300'
+                  }`}
+                >
+                  {/* Radio Circle */}
+                  <div className="mt-0.5 shrink-0">
+                    <div
+                      className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors ${
+                        fulfillmentMethod === 'pickup'
+                          ? 'border-brand-blue-500'
+                          : 'border-brand-gray-300'
+                      }`}
+                    >
+                      {fulfillmentMethod === 'pickup' && (
+                        <div className="w-2 h-2 rounded-full bg-brand-blue-500" />
+                      )}
+                    </div>
                   </div>
-                </div>
 
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  {selectedStore ? (
-                    <>
-                      <div className="flex flex-col">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-xs font-medium text-brand-black">Pickup at</span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setShowStoreLocator(true)
-                            }}
-                            className="text-xs text-brand-blue-500 underline hover:text-brand-blue-600"
-                          >
-                            {selectedStore.name}
-                          </button>
-                        </div>
-                        {selectedStore.pickupTime && (
-                          <p className="text-xs text-brand-gray-600 mt-0.5">{selectedStore.pickupTime}</p>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex flex-col">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-xs text-brand-gray-600">Pickup unavailable</span>
-                        </div>
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-medium text-brand-black">Pickup at</span>
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
                             setShowStoreLocator(true)
                           }}
-                          className="text-xs text-brand-blue-500 underline hover:text-brand-blue-600 mt-0.5 text-left"
+                          onMouseDown={(e) => {
+                            // Prevent the parent button from being triggered
+                            e.stopPropagation()
+                          }}
+                          onKeyDown={(e) => {
+                            // Prevent the parent button from being triggered on Enter/Space
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.stopPropagation()
+                            }
+                          }}
+                          className="text-xs text-brand-blue-500 underline hover:text-brand-blue-600 focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:ring-offset-1 rounded px-1 -ml-1"
+                          aria-label={`Change pickup store. Current store: ${selectedStore.name}`}
+                          tabIndex={0}
                         >
-                          Try another store
+                          {selectedStore.name}
                         </button>
                       </div>
-                    </>
-                  )}
+                      {selectedStore.pickupTime && (
+                        <p className="text-xs text-brand-gray-600 mt-0.5">{selectedStore.pickupTime}</p>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              ) : (
+                <div
+                  role="radio"
+                  aria-checked={false}
+                  aria-disabled={true}
+                  aria-label="Pickup unavailable"
+                  className="flex items-start gap-2 p-3 rounded-lg border border-brand-gray-200 bg-brand-gray-50 opacity-60"
+                >
+                  {/* Radio Circle */}
+                  <div className="mt-0.5 shrink-0">
+                    <div className="w-4 h-4 rounded-full border-2 border-brand-gray-300 flex items-center justify-center">
+                    </div>
+                  </div>
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs text-brand-gray-600">Pickup unavailable</span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setShowStoreLocator(true)
+                        }}
+                        className="text-xs text-brand-blue-500 underline hover:text-brand-blue-600 mt-0.5 text-left focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:ring-offset-1 rounded px-1 -ml-1"
+                        aria-label="Try another store for pickup"
+                        tabIndex={0}
+                      >
+                        Try another store
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </button>
-            </div>
+              )}
+            </fieldset>
 
             {/* Calculate Shipping - Separate Block (only when delivery is selected) */}
             {fulfillmentMethod === 'delivery' && (
@@ -1155,10 +1784,12 @@ export default function ProductDetailPage({
               </div>
             </div>
 
+            {/* Add to Cart Section - Ref for visibility detection */}
+            <div ref={addToCartSectionRef}>
             {/* Add to Cart / Notify Me Button */}
-            {!currentVariant.inStock ? (
+            {!displayProduct.inStock ? (
               <button
-                onClick={() => setNotifyMeProduct(currentVariant)}
+                onClick={() => setNotifyMeProduct(displayProduct)}
                 className="w-full py-3.5 px-6 font-medium text-base rounded-lg transition-colors bg-white text-brand-black border border-brand-gray-300 hover:bg-brand-gray-50"
               >
                 Notify me
@@ -1166,7 +1797,7 @@ export default function ProductDetailPage({
             ) : (
               <button
                 onClick={() => {
-                  addToCart(currentVariant, quantity, selectedSize, selectedColor)
+                  addToCart(displayProduct, quantity, selectedSize, selectedColor)
                 }}
                 className="w-full py-3.5 px-6 font-medium text-base rounded-lg transition-colors bg-brand-blue-500 text-white hover:bg-brand-blue-600"
               >
@@ -1175,7 +1806,7 @@ export default function ProductDetailPage({
             )}
 
             {/* Express Checkout Buttons */}
-            {currentVariant.inStock && (
+            {displayProduct.inStock && (
               <div className="space-y-3 mt-3">
                 <div className="relative">
                   <div className="absolute inset-0 flex items-center">
@@ -1237,7 +1868,7 @@ export default function ProductDetailPage({
             {/* PayPal Pay in 4 */}
             <div className="text-sm text-brand-gray-600">
               <span>Pay in 4 interest-free payments of </span>
-              <span className="font-semibold text-brand-black">${(currentVariant.price / 4).toFixed(2)}</span>
+              <span className="font-semibold text-brand-black">${(displayProduct.price / 4).toFixed(2)}</span>
               <span> with </span>
               <span className="font-bold text-[#003087]">Pay</span>
               <span className="font-bold text-[#0070ba]">Pal</span>
@@ -1249,6 +1880,8 @@ export default function ProductDetailPage({
                 Learn more
               </button>
             </div>
+            </div>
+            {/* End Add to Cart Section Ref */}
 
             {/* Free Shipping, Returns & Warranty Info */}
             <div className="space-y-3 pt-4 border-t border-brand-gray-200">
@@ -1322,11 +1955,11 @@ export default function ProductDetailPage({
             {/* Key Benefits */}
             <div className="py-4">
               <h3 className="text-base font-medium text-brand-black mb-4">Key Benefits</h3>
-              <div className="flex items-center gap-8">
-                {keyBenefits.map((benefit, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <div className="w-10 h-10 bg-brand-gray-100 rounded-full flex items-center justify-center">
-                      <svg className="w-5 h-5 text-brand-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {keyBenefits.slice(0, 4).map((benefit, idx) => (
+                  <div key={idx} className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-brand-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <svg className="w-4 h-4 text-brand-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
                     </div>
@@ -1339,32 +1972,59 @@ export default function ProductDetailPage({
           </div>
 
           {/* Right - Structured Content Accordions (Sticky) */}
-          <div className="lg:sticky lg:top-4 lg:self-start">
-            <Accordion title="Ingredients & Materials">
+          <div className="lg:sticky lg:top-20 lg:self-start">
+            <Accordion title="Materials">
               <ul className="list-disc list-inside space-y-1">
-                <li>Premium full-grain leather upper</li>
-                <li>Cushioned leather insole</li>
-                <li>Durable rubber outsole</li>
-                <li>Metal hardware accents</li>
+                {(product.ingredients || [
+                  'High-density composite resin',
+                  'UV-resistant matte coating',
+                  'Weighted stabilizing core',
+                ]).map((item, idx) => (
+                  <li key={idx}>{item}</li>
+                ))}
               </ul>
             </Accordion>
-            <Accordion title="Usage Instructions">
-              <p>For best results, condition leather regularly with a quality leather conditioner. Avoid prolonged exposure to water and direct sunlight.</p>
+            <Accordion title="Display Tips">
+              <ul className="list-disc list-inside space-y-1">
+                {(product.usageInstructions || [
+                  'Place on any flat, stable surface',
+                  'Position near natural light for best effect',
+                  'Rotate periodically to appreciate all angles',
+                ]).map((item, idx) => (
+                  <li key={idx}>{item}</li>
+                ))}
+              </ul>
             </Accordion>
             <Accordion title="Care Instructions">
               <ul className="list-disc list-inside space-y-1">
-                <li>Clean with a soft, dry cloth</li>
-                <li>Use leather conditioner monthly</li>
-                <li>Store in a cool, dry place</li>
-                <li>Use shoe trees to maintain shape</li>
+                {(product.careInstructions || [
+                  'Dust with a soft, dry microfiber cloth',
+                  'Avoid harsh chemicals or abrasive cleaners',
+                  'Keep away from direct heat sources',
+                ]).map((item, idx) => (
+                  <li key={idx}>{item}</li>
+                ))}
               </ul>
             </Accordion>
-            <Accordion title="Technical Specs">
-              <div className="grid grid-cols-2 gap-2">
-                <p>Heel Height:</p><p>1.5 inches</p>
-                <p>Material:</p><p>Full-grain leather</p>
-                <p>Sole:</p><p>Rubber</p>
-                <p>Closure:</p><p>Lace-up with side zip</p>
+            <Accordion title="Specifications">
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                {product.technicalSpecs ? (
+                  Object.entries(product.technicalSpecs).map(([key, value], idx) => (
+                    <React.Fragment key={idx}>
+                      <p className="text-brand-gray-600">{key}:</p>
+                      <p className="text-brand-black">{value}</p>
+                    </React.Fragment>
+                  ))
+                ) : (
+                  <>
+                    <p className="text-brand-gray-600">Material:</p>
+                    <p className="text-brand-black">Premium composite</p>
+                    <p className="text-brand-gray-600">Finish:</p>
+                    <p className="text-brand-black">Matte</p>
+                    <p className="text-brand-gray-600">Origin:</p>
+                    <p className="text-brand-black">Made in Portugal</p>
+                  </>
+                )}
               </div>
             </Accordion>
           </div>
@@ -1373,8 +2033,8 @@ export default function ProductDetailPage({
         {/* Q&A Section */}
         <div id="qa-section">
           <QASection
-            productId={currentVariant.id}
-            productName={currentVariant.name}
+            productId={displayProduct.id}
+            productName={displayProduct.name}
             productCategory={product.category}
             productSubcategory={product.subcategory}
             productBrand={product.brand}
@@ -1386,10 +2046,10 @@ export default function ProductDetailPage({
         {/* Reviews Section */}
         <div id="reviews-section">
           <ReviewSection
-            productId={currentVariant.id}
-            productName={currentVariant.name}
+            productId={displayProduct.id}
+            productName={displayProduct.name}
             reviews={reviews}
-            averageRating={currentVariant.rating || 4.5}
+            averageRating={displayProduct.rating || 4.5}
             totalReviews={currentVariant.reviewCount || reviews.length}
           />
         </div>
@@ -1408,6 +2068,8 @@ export default function ProductDetailPage({
                   product={prod}
                   onUnifiedAction={handleUnifiedAction}
                   onAddToWishlist={handleAddToWishlist}
+                  isInWishlist={wishlist.includes(prod.id)}
+                  allProducts={suggestedProducts}
                 />
               ))}
             </div>
@@ -1428,6 +2090,8 @@ export default function ProductDetailPage({
                   product={prod}
                   onUnifiedAction={handleUnifiedAction}
                   onAddToWishlist={handleAddToWishlist}
+                  isInWishlist={wishlist.includes(prod.id)}
+                  allProducts={suggestedProducts}
                 />
               ))}
             </div>
@@ -1448,6 +2112,8 @@ export default function ProductDetailPage({
                   product={prod}
                   onUnifiedAction={handleUnifiedAction}
                   onAddToWishlist={handleAddToWishlist}
+                  isInWishlist={wishlist.includes(prod.id)}
+                  allProducts={recentlyViewed}
                 />
               ))}
             </div>
@@ -1495,7 +2161,7 @@ export default function ProductDetailPage({
       <PayPalModal
         isOpen={showPayPalModal}
         onClose={() => setShowPayPalModal(false)}
-        price={currentVariant.price}
+        price={displayProduct.price}
       />
 
       {/* Virtual Try-On Modal */}
@@ -1593,58 +2259,57 @@ export default function ProductDetailPage({
 
                   {/* Selected Options */}
                   <div className="space-y-4 mb-6">
-                    {selectedSize && (
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-brand-gray-600">Size</span>
-                        <span className="font-medium text-brand-black">{selectedSize}</span>
-                      </div>
-                    )}
-                    {selectedColor && (
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-brand-gray-600">Color</span>
-                        <span className="font-medium text-brand-black">{selectedColor}</span>
-                      </div>
-                    )}
+                    {variantGroups.map((group) => {
+                      const selectedValue = getSelectedValue(group.key)
+                      if (selectedValue) {
+                        return (
+                          <div key={group.key} className="flex items-center justify-between text-sm">
+                            <span className="text-brand-gray-600">{group.label}</span>
+                            <span className="font-medium text-brand-black">{selectedValue}</span>
+                          </div>
+                        )
+                      }
+                      return null
+                    })}
                   </div>
 
                   {/* Color Options */}
-                  {product.colors && product.colors.length > 0 && (
-                    <div className="mb-6">
-                      <p className="text-sm font-medium text-brand-black mb-3">Try Different Colors</p>
-                      <div className="flex flex-wrap gap-2">
-                        {product.colors.map((color) => {
-                          const variantProduct = variantProducts[color]
-                          return (
-                          <button
-                            key={color}
-                            onClick={() => {
-                              // Navigate to the variant's URL if it exists
-                              if (variantProduct && variantProduct.id !== product.id) {
-                                router.push(`/product/${variantProduct.id}`)
-                              } else {
-                                setSelectedColor(color)
-                              }
-                            }}
-                            className={`w-10 h-10 rounded-full border-2 transition-all ${
-                              selectedColor === color
-                                ? 'border-brand-blue-500 ring-2 ring-brand-blue-200'
-                                : 'border-brand-gray-200 hover:border-brand-gray-400'
-                            }`}
-                            style={{
-                              backgroundColor:
-                                color.toLowerCase() === 'white' ? '#fff' :
-                                color.toLowerCase() === 'black' ? '#000' :
-                                color.toLowerCase() === 'gray' ? '#6b7280' :
-                                color.toLowerCase() === 'charcoal' ? '#36454F' :
-                                color.toLowerCase() === 'silver' ? '#C0C0C0' : '#ccc',
-                            }}
-                            title={color}
-                          />
-                          )
-                        })}
+                  {(() => {
+                    const colorGroup = variantGroups.find((g) => g.key === 'color')
+                    if (!colorGroup || colorGroup.options.length === 0) return null
+                    
+                    return (
+                      <div className="mb-6">
+                        <p className="text-sm font-medium text-brand-black mb-3">Try Different Colors</p>
+                        <div className="flex flex-wrap gap-2">
+                          {colorGroup.options.map((option) => {
+                            return (
+                              <button
+                                key={option.id}
+                                onClick={() => {
+                                  handleOptionSelect('color', option.id)
+                                }}
+                                className={`w-10 h-10 rounded-full border-2 transition-all ${
+                                  isOptionSelected('color', option.id)
+                                    ? 'border-brand-blue-500 ring-2 ring-brand-blue-200'
+                                    : 'border-brand-gray-200 hover:border-brand-gray-400'
+                                }`}
+                                style={{
+                                  backgroundColor:
+                                    option.value.toLowerCase() === 'white' ? '#fff' :
+                                    option.value.toLowerCase() === 'black' ? '#000' :
+                                    option.value.toLowerCase() === 'gray' ? '#6b7280' :
+                                    option.value.toLowerCase() === 'charcoal' ? '#36454F' :
+                                    option.value.toLowerCase() === 'silver' ? '#C0C0C0' : '#ccc',
+                                }}
+                                title={option.value}
+                              />
+                            )
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )
+                  })()}
 
                   {/* Instructions */}
                   <div className="bg-brand-blue-50 rounded-lg p-4 mb-6">
@@ -1685,10 +2350,10 @@ export default function ProductDetailPage({
       {quickViewProduct && (
         <QuickViewModal
           product={quickViewProduct}
-          allProducts={allProducts}
+          productVariants={productVariants}
           isOpen={!!quickViewProduct}
           onClose={() => setQuickViewProduct(null)}
-          onAddToCart={(product, size, color) => addToCart(product, 1, size, color)}
+          onAddToCart={(product, quantity, size, color) => addToCart(product, quantity, size, color)}
           onAddToWishlist={handleAddToWishlist}
           onNotify={(product) => setNotifyMeProduct(product)}
         />
@@ -1703,6 +2368,40 @@ export default function ProductDetailPage({
           onNotify={handleNotifyMe}
         />
       )}
+
+      {/* Mobile Add to Cart Button */}
+      <MobileAddToCartButton
+        product={product}
+        currentVariant={currentVariant}
+        selectedSize={selectedSize}
+        selectedColor={selectedColor}
+        quantity={quantity}
+        onSizeChange={(size) => {
+          const sizeGroup = variantGroups.find((g) => g.key === 'size')
+          const option = sizeGroup?.options.find((opt) => opt.value === size)
+          if (option) {
+            handleOptionSelect('size', option.id)
+          }
+        }}
+        onColorChange={(color) => {
+          const colorGroup = variantGroups.find((g) => g.key === 'color')
+          const option = colorGroup?.options.find((opt) => opt.value === color)
+          if (option) {
+            handleOptionSelect('color', option.id)
+            setHasSelectedColor(true)
+          }
+        }}
+        onQuantityChange={setQuantity}
+        onAddToCart={() => {
+          addToCart(currentVariant, quantity, selectedSize, selectedColor)
+        }}
+        onNotifyMe={() => {
+          setNotifyMeProduct(currentVariant)
+        }}
+        variantProducts={variantProducts}
+        allProducts={allVariants}
+        isVisible={showMobileAddToCart}
+      />
     </div>
   )
 }

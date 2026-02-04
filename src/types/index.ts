@@ -1,5 +1,5 @@
 /**
- * Domain Types for Market Street E-commerce
+ * Domain Types for Salesforce Foundations E-commerce
  * 
  * This file contains all shared domain types used across the application.
  * These types are database-agnostic and can be used with any data provider.
@@ -342,6 +342,7 @@ export interface Review {
   customerId?: string
   rating: number // 1-5
   date: string
+  location?: string // City, State/Country (e.g., "Los Angeles, CA" or "London, UK")
   title: string
   content: string
   verified: boolean

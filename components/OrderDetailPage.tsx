@@ -8,10 +8,11 @@ import Footer from './Footer'
 import AnnouncementBar from './AnnouncementBar'
 import ProductCard from './ProductCard'
 import { Product } from './ProductListingPage'
-import { getFeaturedProducts, getAllProducts } from '../lib/products'
+import { getFeaturedProducts, getAllProductsWithVariants } from '../lib/products'
 import QuickViewModal from './QuickViewModal'
 import NotifyMeModal from './NotifyMeModal'
 import { addToCart } from '../lib/cart'
+import { toggleWishlist } from '../lib/wishlist'
 
 interface OrderItem {
   image: string
@@ -95,7 +96,7 @@ export default function OrderDetailPage({ order }: OrderDetailPageProps) {
     const loadProducts = async () => {
       const [featured, all] = await Promise.all([
         getFeaturedProducts(),
-        getAllProducts(),
+        getAllProductsWithVariants(),
       ])
       setSuggestedProducts(featured.slice(0, 4))
       setAllProducts(all)
@@ -152,9 +153,9 @@ export default function OrderDetailPage({ order }: OrderDetailPageProps) {
     console.log(`Notify ${email} when ${notifyMeProduct?.name} is available`)
   }
 
-  const handleAddToWishlist = (product: Product) => {
-    console.log('Add to wishlist:', product.id)
-    // Add to wishlist logic here
+  const handleAddToWishlist = (product: Product, size?: string, color?: string) => {
+    // Only pass size/color if they were explicitly selected (from QuickViewModal)
+    toggleWishlist(product, size, color, size || color ? 'pdp' : 'card')
   }
 
   const nextSlide = () => {
@@ -187,14 +188,14 @@ export default function OrderDetailPage({ order }: OrderDetailPageProps) {
             <div className="mt-4 md:mt-0">
               <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold ${
                 order.status === 'Delivered' || order.status === 'Picked Up'
-                  ? 'bg-green-100 text-green-700'
+                  ? 'badge-success'
                   : order.status === 'Partially Delivered'
-                  ? 'bg-yellow-100 text-yellow-700'
+                  ? 'badge-warning'
                   : order.status === 'In Transit' || order.status === 'Ready for Pickup'
-                  ? 'bg-blue-100 text-blue-700'
+                  ? 'badge-info'
                   : order.status === 'Cancelled'
-                  ? 'bg-red-100 text-red-700'
-                  : 'bg-gray-100 text-gray-700'
+                  ? 'badge-error'
+                  : 'badge-neutral'
               }`}>
                 {(order.status === 'Delivered' || order.status === 'Picked Up') && (
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -288,14 +289,14 @@ export default function OrderDetailPage({ order }: OrderDetailPageProps) {
                                 </p>
                               </div>
                               {shippingGroup && (
-                                <span className={`text-xs font-semibold px-2 py-1 rounded ${
+                                <span className={`text-xs font-semibold px-2 py-1 rounded-badge ${
                                   shippingGroup.status === 'Delivered' || shippingGroup.status === 'Picked Up'
-                                    ? 'bg-green-100 text-green-700'
+                                    ? 'badge-success'
                                     : shippingGroup.status === 'In Transit' || shippingGroup.status === 'Ready for Pickup'
-                                    ? 'bg-blue-100 text-blue-700'
+                                    ? 'badge-info'
                                     : shippingGroup.status === 'Cancelled'
-                                    ? 'bg-red-100 text-red-700'
-                                    : 'bg-gray-100 text-gray-700'
+                                    ? 'badge-error'
+                                    : 'badge-neutral'
                                 }`}>
                                   {shippingGroup.status}
                                 </span>
@@ -384,7 +385,7 @@ export default function OrderDetailPage({ order }: OrderDetailPageProps) {
                                           Your order is ready for pickup. Please bring a valid ID and your order confirmation.
                                         </p>
                                         {shippingGroup.status === 'Ready for Pickup' && (
-                                          <p className="text-xs font-medium text-green-600">
+                                          <p className="text-xs font-medium text-success">
                                             ✓ Ready to pick up
                                           </p>
                                         )}
@@ -577,7 +578,7 @@ export default function OrderDetailPage({ order }: OrderDetailPageProps) {
                 {order.promotions !== 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-brand-gray-600">Promotions</span>
-                    <span className="text-green-600">-${Math.abs(order.promotions).toFixed(2)}</span>
+                    <span className="text-success">-${Math.abs(order.promotions).toFixed(2)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-sm">
@@ -720,7 +721,7 @@ export default function OrderDetailPage({ order }: OrderDetailPageProps) {
                 </button>
               )}
               {order.status !== 'Cancelled' && order.canCancel && (
-                <button className="px-4 py-2 bg-white border border-red-300 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors shadow-sm">
+                <button className="px-4 py-2 bg-white border border-error text-error text-sm font-medium rounded-lg hover:bg-error-light transition-colors shadow-sm">
                   Cancel order
                 </button>
               )}
@@ -788,6 +789,7 @@ export default function OrderDetailPage({ order }: OrderDetailPageProps) {
                   product={product}
                   onUnifiedAction={handleUnifiedAction}
                   onAddToWishlist={handleAddToWishlist}
+                  allProducts={allProducts}
                 />
               ))}
             </div>
@@ -808,10 +810,10 @@ export default function OrderDetailPage({ order }: OrderDetailPageProps) {
       {quickViewProduct && (
         <QuickViewModal
           product={quickViewProduct}
-          allProducts={allProducts}
+          productVariants={[]}
           isOpen={!!quickViewProduct}
           onClose={() => setQuickViewProduct(null)}
-          onAddToCart={(product, size, color) => addToCart(product, 1, size, color)}
+          onAddToCart={(product, quantity, size, color) => addToCart(product, quantity, size, color)}
           onAddToWishlist={handleAddToWishlist}
           onNotify={(product) => setNotifyMeProduct(product)}
         />

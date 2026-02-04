@@ -31,7 +31,7 @@ export default function PaymentMethodsPage() {
           {/* Introduction */}
           <section className="mb-16 md:mb-24">
             <p className="text-body-lg text-brand-gray-700 leading-relaxed mb-6">
-              At Market Street, we offer a variety of secure payment options to make your checkout experience convenient and safe. All transactions are processed through encrypted, secure payment gateways to protect your information.
+              At Salesforce Foundations, we offer a variety of secure payment options to make your checkout experience convenient and safe. All transactions are processed through encrypted, secure payment gateways to protect your information.
             </p>
             <p className="text-body-lg text-brand-gray-700 leading-relaxed">
               We accept the following payment methods:

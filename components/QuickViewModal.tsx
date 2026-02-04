@@ -6,6 +6,12 @@ import { Product } from './ProductListingPage'
 import { addToCart } from '../lib/cart'
 import LazyImage from './LazyImage'
 import Model3DViewer from './Model3DViewer'
+import {
+  PDPProduct,
+  VariantGroup,
+  VariantOption,
+  normalizeOptionValue,
+} from '../src/lib/variantResolution'
 
 // Media item type for gallery
 interface MediaItem {
@@ -17,52 +23,213 @@ interface MediaItem {
 
 interface QuickViewModalProps {
   product: Product
-  allProducts?: Product[] // All products to find color variants
+  productVariants?: Product[] // All variants for this product
   isOpen: boolean
   onClose: () => void
-  onAddToCart: (product: Product, size?: string, color?: string) => void
-  onAddToWishlist: (product: Product) => void
+  onAddToCart: (product: Product, quantity: number, size?: string, color?: string) => void
+  onAddToWishlist: (product: Product, size?: string, color?: string) => void
   onNotify?: (product: Product) => void
 }
 
 export default function QuickViewModal({
   product,
-  allProducts = [],
+  productVariants = [],
   isOpen,
   onClose,
   onAddToCart,
   onAddToWishlist,
   onNotify,
 }: QuickViewModalProps) {
-  const [selectedSize, setSelectedSize] = useState<string>(product.size?.[0] || '')
-  const [selectedColor, setSelectedColor] = useState<string>(product.color || product.colors?.[0] || '')
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
+  const [quantity, setQuantity] = useState(1)
 
-  // Find variant products by matching product name
-  const variantProducts = useMemo(() => {
-    if (!allProducts.length || !product.colors || product.colors.length <= 1) {
-      return {}
+  // Reset quantity when modal opens with a new product
+  useEffect(() => {
+    if (isOpen) {
+      setQuantity(1)
     }
-    
-    const variants: Record<string, Product> = {}
-    
-    // Find products with the same name but different colors
-    allProducts.forEach((p) => {
-      if (p.name === product.name && p.color) {
-        variants[p.color] = p
+  }, [isOpen, product.id])
+
+  // Build all variants list (same as PDP)
+  const allVariants = useMemo(() => {
+    if (productVariants.length > 0) {
+      return productVariants.map(v => v as PDPProduct)
+    }
+    // Fallback to base product if no variants provided
+    return [product as PDPProduct]
+  }, [product, productVariants])
+
+  // Build variant groups with variantId mapping (direct ID resolution, no heuristics)
+  const variantGroups = useMemo((): VariantGroup[] => {
+    const groups: VariantGroup[] = []
+    const seenGroupKeys = new Set<string>()
+
+    // Helper to normalize color for comparison (case-insensitive)
+    const normalizeColor = (color: string): string => color.trim().toLowerCase()
+
+    // Color group - map each color option to its variant ID
+    const colorMap = new Map<string, string>() // color (normalized) -> variantId
+    allVariants.forEach((variant) => {
+      if (variant.color) {
+        const normalizedColor = normalizeColor(variant.color)
+        // Use first variant found for this color (prefer in-stock if available)
+        if (!colorMap.has(normalizedColor)) {
+          colorMap.set(normalizedColor, variant.id)
+        } else {
+          // Prefer in-stock variant
+          const existingVariantId = colorMap.get(normalizedColor)!
+          const existingVariant = allVariants.find(v => v.id === existingVariantId)
+          if (variant.inStock && !existingVariant?.inStock) {
+            colorMap.set(normalizedColor, variant.id)
+          }
+        }
       }
     })
-    
-    return variants
-  }, [allProducts, product.name, product.colors])
 
-  // Get current variant based on selected color
-  const currentVariant = useMemo(() => {
-    if (selectedColor && variantProducts[selectedColor]) {
-      return variantProducts[selectedColor]
+    if (colorMap.size > 0) {
+      const groupKey = 'color'
+      seenGroupKeys.add(groupKey)
+      const options: VariantOption[] = Array.from(colorMap.entries()).map(([normalizedColor, variantId]) => {
+        // Find the original color value from the variant
+        const variant = allVariants.find(v => v.id === variantId)
+        const originalColor = variant?.color || normalizedColor
+        return {
+          id: `${groupKey}-${normalizeOptionValue(originalColor)}`,
+          value: originalColor, // Use original color for display
+          variantId // Direct variant ID for this color
+        }
+      })
+      groups.push({ key: groupKey, label: 'Color', options })
     }
-    return product
-  }, [selectedColor, variantProducts, product])
+
+    // Size group - map each size to a variant (use first variant with that size)
+    const sizeMap = new Map<string, string>() // size -> variantId
+    allVariants.forEach((variant) => {
+      if (variant.size) {
+        variant.size.forEach((size) => {
+          // Use first variant found for this size (prefer in-stock if available)
+          if (!sizeMap.has(size)) {
+            sizeMap.set(size, variant.id)
+          } else {
+            // Prefer in-stock variant
+            const existingVariantId = sizeMap.get(size)!
+            const existingVariant = allVariants.find(v => v.id === existingVariantId)
+            if (variant.inStock && !existingVariant?.inStock) {
+              sizeMap.set(size, variant.id)
+            }
+          }
+        })
+      }
+    })
+
+    if (sizeMap.size > 0) {
+      const groupKey = 'size'
+      if (!seenGroupKeys.has(groupKey)) {
+        seenGroupKeys.add(groupKey)
+        const options: VariantOption[] = Array.from(sizeMap.entries()).map(([size, variantId]) => ({
+          id: `${groupKey}-${normalizeOptionValue(size)}`,
+          value: size,
+          variantId // Direct variant ID for this size
+        }))
+        groups.push({ key: groupKey, label: 'Size', options })
+      }
+    }
+
+    // Capacity group
+    const capacityMap = new Map<string, string>()
+    allVariants.forEach((variant) => {
+      if (variant.capacities) {
+        variant.capacities.forEach((capacity) => {
+          if (!capacityMap.has(capacity)) {
+            capacityMap.set(capacity, variant.id)
+          }
+        })
+      }
+    })
+
+    if (capacityMap.size > 0) {
+      const groupKey = 'capacity'
+      if (!seenGroupKeys.has(groupKey)) {
+        seenGroupKeys.add(groupKey)
+        const options: VariantOption[] = Array.from(capacityMap.entries()).map(([capacity, variantId]) => ({
+          id: `${groupKey}-${normalizeOptionValue(capacity)}`,
+          value: capacity,
+          variantId
+        }))
+        groups.push({ key: groupKey, label: 'Capacity', options })
+      }
+    }
+
+    // Scent group
+    const scentMap = new Map<string, string>()
+    allVariants.forEach((variant) => {
+      if (variant.scents) {
+        variant.scents.forEach((scent) => {
+          if (!scentMap.has(scent)) {
+            scentMap.set(scent, variant.id)
+          }
+        })
+      }
+    })
+
+    if (scentMap.size > 0) {
+      const groupKey = 'scent'
+      if (!seenGroupKeys.has(groupKey)) {
+        seenGroupKeys.add(groupKey)
+        const options: VariantOption[] = Array.from(scentMap.entries()).map(([scent, variantId]) => ({
+          id: `${groupKey}-${normalizeOptionValue(scent)}`,
+          value: scent,
+          variantId
+        }))
+        groups.push({ key: groupKey, label: 'Scent', options })
+      }
+    }
+
+    return groups
+  }, [allVariants]) // Variant groups are static - each option has its variantId
+
+  // Initialize currentVariantId from product (direct ID resolution, no heuristics)
+  const getInitialVariantId = (): string => {
+    // Use product's own ID as default
+    return product.id
+  }
+
+  // Store current variant ID directly (source of truth)
+  const [currentVariantId, setCurrentVariantId] = useState<string>(() => getInitialVariantId())
+
+  // Store selected values for UI display only (not used for variant resolution)
+  const [selectedValues, setSelectedValues] = useState<Record<string, string>>(() => {
+    const selected: Record<string, string> = {}
+    if (product.color) selected.color = product.color
+    if (product.size && product.size.length > 0) selected.size = product.size[0]
+    return selected
+  })
+
+  // Get current variant directly by ID (no resolution logic)
+  const currentVariant = useMemo(() => {
+    const variant = allVariants.find(v => v.id === currentVariantId)
+    return variant || (product as PDPProduct)
+  }, [allVariants, currentVariantId, product])
+
+  // Create displayProduct - single source of truth for all variant-dependent UI
+  const displayProduct = useMemo(() => {
+    return currentVariant
+  }, [currentVariant])
+
+  // Debug logging when currentVariantId changes (dev only)
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      const variant = allVariants.find(v => v.id === currentVariantId) || product
+      console.log('[QuickView] currentVariantId changed:', {
+        variantId: currentVariantId,
+        variantColor: variant.color,
+        imagesCount: variant.images?.length || 0,
+        price: variant.price,
+        inStock: variant.inStock,
+        stockQuantity: variant.stockQuantity,
+      })
+    }
+  }, [currentVariantId, allVariants, product])
 
   // Mapping of product IDs to their 3D model GLB files
   const product3DModels: Record<string, string> = {
@@ -74,50 +241,65 @@ export default function QuickViewModal({
     'vertical-set': 'Vertical Set.glb',
   }
 
-  // Get images for current variant
+  // Get images from displayProduct (variant images if available, else base product images)
   const images = useMemo(() => {
-    return currentVariant.images || [currentVariant.image]
-  }, [currentVariant])
+    // Prefer variant's own images
+    if (displayProduct.images && displayProduct.images.length > 0) {
+      return displayProduct.images
+    }
+    // Fallback to base product images
+    if (displayProduct.image) {
+      return [displayProduct.image]
+    }
+    // Final fallback
+    return []
+  }, [displayProduct.images, displayProduct.image])
 
   // Check if this variant has a 3D model
-  const has3DModel = product3DModels[currentVariant.id] !== undefined
-  const model3DFile = has3DModel ? product3DModels[currentVariant.id] : null
+  const has3DModel = product3DModels[displayProduct.id] !== undefined
+  const model3DFile = has3DModel ? product3DModels[displayProduct.id] : null
 
   // Combine images and 3D model into media items
   const mediaItems: MediaItem[] = useMemo(() => {
     const items: MediaItem[] = [
-      ...images.map((src): MediaItem => ({ type: 'image', src, alt: currentVariant.name })),
+      ...images.map((src): MediaItem => ({ type: 'image', src, alt: displayProduct.name })),
     ]
     // Add 3D model last if available
     if (has3DModel && model3DFile) {
       items.push({
         type: 'model3d',
         src: `/models/${model3DFile}`,
-        alt: `${currentVariant.name} 3D Model`,
+        alt: `${displayProduct.name} 3D Model`,
         thumbnail: images[0],
       })
     }
     return items
-  }, [images, has3DModel, model3DFile, currentVariant.name])
+  }, [images, has3DModel, model3DFile, displayProduct.name])
 
   // Reset image index when variant changes
   useEffect(() => {
     setCurrentImageIndex(0)
-  }, [selectedColor])
+  }, [displayProduct.id])
 
-  // Discount calculation (same as ProductCard and PDP)
-  const hasDiscount = currentVariant.discountPercentage !== undefined 
-    ? currentVariant.discountPercentage > 0
-    : currentVariant.originalPrice && currentVariant.originalPrice > currentVariant.price
+  // Discount calculation (same as ProductCard and PDP) - use displayProduct
+  const hasDiscount = useMemo(() => {
+    return displayProduct.discountPercentage !== undefined 
+      ? displayProduct.discountPercentage > 0
+      : displayProduct.originalPrice && displayProduct.originalPrice > displayProduct.price
+  }, [displayProduct.discountPercentage, displayProduct.originalPrice, displayProduct.price])
   
-  const discountPercentage = currentVariant.discountPercentage !== undefined
-    ? currentVariant.discountPercentage
-    : hasDiscount && currentVariant.originalPrice
-      ? Math.round(((currentVariant.originalPrice - currentVariant.price) / currentVariant.originalPrice) * 100)
+  const discountPercentage = useMemo(() => {
+    return displayProduct.discountPercentage !== undefined
+      ? displayProduct.discountPercentage
+      : hasDiscount && displayProduct.originalPrice
+        ? Math.round(((displayProduct.originalPrice - displayProduct.price) / displayProduct.originalPrice) * 100)
       : null
+  }, [displayProduct.discountPercentage, displayProduct.originalPrice, displayProduct.price, hasDiscount])
   
   // Percent-off badge value (can be different from calculated discount)
-  const percentOffBadge = currentVariant.percentOff !== undefined ? currentVariant.percentOff : discountPercentage
+  const percentOffBadge = useMemo(() => {
+    return displayProduct.percentOff !== undefined ? displayProduct.percentOff : discountPercentage
+  }, [displayProduct.percentOff, discountPercentage])
 
   // Badge logic (same as ProductCard and PDP)
   const getBadgeLabel = (badge: string) => {
@@ -133,21 +315,24 @@ export default function QuickViewModal({
 
   const getBadgeColor = (badge: string) => {
     const colors: Record<string, string> = {
-      'new': 'bg-green-600',
-      'best-seller': 'bg-brand-blue-500',
-      'online-only': 'bg-purple-600',
-      'limited-edition': 'bg-orange-600',
-      'promotion': 'bg-brand-blue-500',
+      'new': 'badge-new',
+      'best-seller': 'badge-bestseller',
+      'online-only': 'badge-online-only',
+      'limited-edition': 'badge-limited',
+      'promotion': 'badge-sale',
     }
-    return colors[badge] || 'bg-brand-gray-800'
+    return colors[badge] || 'bg-muted text-muted-foreground'
   }
 
-  const badges = currentVariant.badges || []
-  if (currentVariant.isNew) badges.push('new')
-  if (currentVariant.isBestSeller) badges.push('best-seller')
-  if (currentVariant.isOnlineOnly) badges.push('online-only')
-  if (currentVariant.isLimitedEdition) badges.push('limited-edition')
-  if (hasDiscount) badges.push('promotion')
+  const badges = useMemo(() => {
+    const badgeList = displayProduct.badges || []
+    if (displayProduct.isNew) badgeList.push('new')
+    if (displayProduct.isBestSeller) badgeList.push('best-seller')
+    if (displayProduct.isOnlineOnly) badgeList.push('online-only')
+    if (displayProduct.isLimitedEdition) badgeList.push('limited-edition')
+    if (hasDiscount) badgeList.push('promotion')
+    return badgeList
+  }, [displayProduct.badges, displayProduct.isNew, displayProduct.isBestSeller, displayProduct.isOnlineOnly, displayProduct.isLimitedEdition, hasDiscount])
 
   // Carousel navigation
   const thumbnailContainerRef = useRef<HTMLDivElement>(null)
@@ -206,18 +391,82 @@ export default function QuickViewModal({
     touchEndX.current = 0
   }
 
-  // Reset state when product changes
-  useEffect(() => {
-    setSelectedSize(product.size?.[0] || '')
-    setSelectedColor(product.color || product.colors?.[0] || '')
-    setCurrentImageIndex(0)
-  }, [product])
+  // Handle option selection - resolve by variantId directly (no heuristics)
+  const handleOptionSelect = (groupKey: string, value: string) => {
+    // Find the option that was clicked
+    const group = variantGroups.find(g => g.key === groupKey)
+    const option = group?.options.find(opt => opt.value === value)
+    
+    if (!option) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[QuickView] Option not found:', { groupKey, value })
+      }
+      return
+    }
+
+    // Update selectedValues for UI display
+    setSelectedValues((prev) => ({
+      ...prev,
+      [groupKey]: value,
+    }))
+
+    // If option has variantId, use it directly (source of truth)
+    if (option.variantId) {
+      const resolvedVariantId = option.variantId
+      
+      // Debug logging (dev only)
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[QuickView] option clicked:', {
+          groupKey,
+          value,
+          resolvedVariantId,
+          optionId: option.id,
+        })
+      }
+
+      // Set currentVariantId directly - this is the source of truth
+      setCurrentVariantId(resolvedVariantId)
+
+      // Debug logging when variant changes (dev only)
+      if (process.env.NODE_ENV === 'development') {
+        const variant = allVariants.find(v => v.id === resolvedVariantId)
+        console.log('[QuickView] currentVariantId changed:', {
+          variantId: resolvedVariantId,
+          variantColor: variant?.color,
+          variantPrice: variant?.price,
+          variantInStock: variant?.inStock,
+        })
+      }
+    } else {
+      // Fallback: if no variantId, try to find variant by value (shouldn't happen with proper mapping)
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[QuickView] Option has no variantId, falling back to value matching:', {
+          groupKey,
+          value,
+        })
+      }
+      
+      // For color, find variant where variant.color matches (case-insensitive)
+      if (groupKey === 'color') {
+        const normalizeColor = (c: string) => c.trim().toLowerCase()
+        const matchingVariant = allVariants.find(v => 
+          v.color && normalizeColor(v.color) === normalizeColor(value)
+        )
+        if (matchingVariant) {
+          setCurrentVariantId(matchingVariant.id)
+        }
+      }
+    }
+  }
 
   if (!isOpen) return null
 
   const handleAddToCart = () => {
-    addToCart(currentVariant, 1, selectedSize, selectedColor)
-    onAddToCart(currentVariant, selectedSize, selectedColor)
+    const size = selectedValues.size
+    const color = selectedValues.color
+    // Only call the parent callback - don't call addToCart directly here
+    // The parent component handles adding to cart via onAddToCart
+    onAddToCart(displayProduct, quantity, size, color)
     onClose() // Close the modal after adding to cart
   }
 
@@ -225,12 +474,12 @@ export default function QuickViewModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+        className="fixed inset-0 backdrop-default transition-opacity"
         onClick={onClose}
       />
 
       {/* Modal Container */}
-      <div className="relative bg-white rounded-none sm:rounded-2xl shadow-xl max-w-5xl w-full h-full sm:h-auto sm:max-h-[90vh] flex flex-col">
+      <div className="relative bg-card rounded-none sm:rounded-modal shadow-modal max-w-5xl w-full h-full sm:h-auto sm:max-h-[90vh] flex flex-col">
         {/* Close Button - Fixed position outside scroll */}
         <button
           onClick={onClose}
@@ -258,22 +507,22 @@ export default function QuickViewModal({
                 {/* Badges - positioned like product cards */}
                 <div className="absolute top-2 left-2 flex flex-col items-start gap-1 z-20">
                   {/* Out of Stock Badge - Show first if product is out of stock */}
-                  {!currentVariant.inStock && (
-                    <span className="bg-red-600 text-white px-2 py-1 text-xs font-semibold uppercase rounded-md inline-block shadow-lg">
+                  {!displayProduct.inStock && (
+                    <span className="badge-out-of-stock px-2 py-1 text-xs font-semibold uppercase rounded-badge inline-block shadow-lg">
                       Out of Stock
                     </span>
                   )}
                   {badges.filter(badge => badge !== 'promotion').slice(0, 2).map((badge, idx) => (
                     <span
                       key={idx}
-                      className={`${getBadgeColor(badge)} text-white px-2 py-1 text-xs font-semibold uppercase rounded-md inline-block shadow-lg`}
+                      className={`${getBadgeColor(badge)} px-2 py-1 text-xs font-semibold uppercase rounded-badge inline-block shadow-lg`}
                     >
                       {getBadgeLabel(badge)}
                     </span>
                   ))}
                   {/* Percent-off badge - show if there's a discount (prioritize this over promotion badge) */}
                   {percentOffBadge !== null && percentOffBadge !== undefined && (
-                    <span className="bg-brand-blue-500 text-white px-2 py-1 text-xs font-semibold rounded-md inline-block shadow-lg">
+                    <span className="badge-sale px-2 py-1 text-xs font-semibold rounded-badge inline-block shadow-lg">
                       -{percentOffBadge}%
                     </span>
                   )}
@@ -282,7 +531,7 @@ export default function QuickViewModal({
                 {mediaItems[currentImageIndex]?.type === 'model3d' ? (
                   <Model3DViewer
                     src={mediaItems[currentImageIndex].src}
-                    alt={mediaItems[currentImageIndex].alt || currentVariant.name}
+                    alt={mediaItems[currentImageIndex].alt || displayProduct.name}
                     className="w-full h-full"
                     autoRotate={true}
                     cameraControls={true}
@@ -290,7 +539,7 @@ export default function QuickViewModal({
                 ) : (
                   <LazyImage
                     src={mediaItems[currentImageIndex]?.src || images[0]}
-                    alt={currentVariant.name}
+                    alt={displayProduct.name}
                     className="w-full h-full"
                     objectFit="cover"
                   />
@@ -364,7 +613,7 @@ export default function QuickViewModal({
                           <>
                             <LazyImage
                               src={media.thumbnail || images[0]}
-                              alt={media.alt || `${currentVariant.name} 3D Model`}
+                              alt={media.alt || `${displayProduct.name} 3D Model`}
                               className="w-full h-full"
                               objectFit="cover"
                             />
@@ -376,7 +625,7 @@ export default function QuickViewModal({
                         ) : (
                           <LazyImage
                             src={media.src}
-                            alt={media.alt || `${currentVariant.name} view ${idx + 1}`}
+                            alt={media.alt || `${displayProduct.name} view ${idx + 1}`}
                             className="w-full h-full"
                             objectFit="cover"
                           />
@@ -408,15 +657,15 @@ export default function QuickViewModal({
             <div className="space-y-4">
               {/* Brand & Name */}
               <div>
-                {currentVariant.brand && (
-                  <p className="text-xs text-brand-gray-500 uppercase tracking-wider mb-1">{currentVariant.brand}</p>
+                {displayProduct.brand && (
+                  <p className="text-xs text-brand-gray-500 uppercase tracking-wider mb-1">{displayProduct.brand}</p>
                 )}
                 <div className="flex items-start justify-between gap-4 mb-3">
                   <h2 className="text-2xl md:text-3xl font-medium text-brand-black tracking-tight flex-1">
-                    {currentVariant.name}
+                    {displayProduct.name}
                   </h2>
                   <Link
-                    href={`/product/${currentVariant.id}`}
+                    href={`/product/${displayProduct.id}`}
                     onClick={onClose}
                     className="flex-shrink-0 text-sm text-brand-blue-500 hover:text-brand-blue-600 font-medium underline underline-offset-2 transition-colors whitespace-nowrap"
                   >
@@ -424,27 +673,27 @@ export default function QuickViewModal({
                   </Link>
                 </div>
                 {/* SKU */}
-                {currentVariant.sku && (
+                {displayProduct.sku && (
                   <p className="text-xs text-brand-gray-500 mb-2">
-                    SKU: {currentVariant.sku}
+                    SKU: {displayProduct.sku}
                   </p>
                 )}
                 {/* Short Description */}
-                {currentVariant.shortDescription && (
+                {displayProduct.shortDescription && (
                   <p className="text-sm text-brand-gray-600 mb-3 leading-relaxed">
-                    {currentVariant.shortDescription}
+                    {displayProduct.shortDescription}
                   </p>
                 )}
-                {currentVariant.rating !== undefined && (
+                {displayProduct.rating !== undefined && (
                   <div className="flex items-center gap-2 mb-3">
                     <div className="flex items-center">
                       {[...Array(5)].map((_, i) => (
-                        <svg
+                          <svg
                           key={i}
                           className={`w-4 h-4 ${
-                            i < Math.floor(currentVariant.rating || 0)
-                              ? 'text-yellow-400 fill-current'
-                              : 'text-brand-gray-300'
+                            i < Math.floor(displayProduct.rating || 0)
+                              ? 'text-star-filled fill-current'
+                              : 'text-star-empty'
                           }`}
                           fill="currentColor"
                           viewBox="0 0 20 20"
@@ -454,7 +703,7 @@ export default function QuickViewModal({
                       ))}
                     </div>
                     <span className="text-sm text-brand-gray-600 underline decoration-dotted underline-offset-2">
-                      {currentVariant.rating?.toFixed(1)} ({currentVariant.reviewCount?.toLocaleString() || 0})
+                      {displayProduct.rating?.toFixed(1)} ({displayProduct.reviewCount?.toLocaleString() || 0})
                     </span>
                   </div>
                 )}
@@ -464,11 +713,11 @@ export default function QuickViewModal({
               <div>
                 <div className="flex items-center gap-3">
                   <span className="text-2xl font-semibold text-brand-black">
-                    ${currentVariant.price.toFixed(2)}
+                    ${displayProduct.price.toFixed(2)}
                   </span>
-                  {hasDiscount && currentVariant.originalPrice && (
+                  {hasDiscount && displayProduct.originalPrice && (
                     <span className="text-base text-brand-gray-400 line-through">
-                      ${currentVariant.originalPrice.toFixed(2)}
+                      ${displayProduct.originalPrice.toFixed(2)}
                     </span>
                   )}
                   {percentOffBadge !== null && percentOffBadge !== undefined && (
@@ -477,87 +726,69 @@ export default function QuickViewModal({
                     </span>
                   )}
                 </div>
-                {currentVariant.storeAvailable && (
+                {displayProduct.storeAvailable && (
                   <p className="text-sm text-green-600 font-medium mt-1">Available for pickup in store</p>
                 )}
                 {/* Promotional Message */}
-                {currentVariant.promotionalMessage && (
+                {displayProduct.promotionalMessage && (
                   <p className="text-sm text-green-600 font-medium mt-2">
-                    {currentVariant.promotionalMessage}
+                    {displayProduct.promotionalMessage}
                   </p>
                 )}
               </div>
 
-              {/* Size Selection */}
-              {product.size && product.size.length > 0 && (
-                <div>
+              {/* Variant Selection - Size, Color, Capacity, Scent */}
+              {variantGroups.map((group) => {
+                const selectedValue = selectedValues[group.key]
+                return (
+                  <div key={group.key}>
                   <label className="block text-sm font-medium text-brand-black mb-2">
-                    Size: {selectedSize}
+                      {group.label}: {selectedValue || 'Select'}
                   </label>
                   <div className="flex flex-wrap gap-2">
-                    {product.size.map((size) => (
+                      {group.options.map((option) => {
+                        const isSelected = selectedValue === option.value
+                        return (
                       <button
-                        key={size}
-                        onClick={() => setSelectedSize(size)}
-                        className={`min-w-[44px] px-3 py-2 text-sm border transition-colors rounded-lg ${
-                          selectedSize === size
+                            key={option.id}
+                            onClick={() => handleOptionSelect(group.key, option.value)}
+                            className={`min-w-[44px] px-3 py-2 text-sm border transition-colors capitalize rounded-lg ${
+                              isSelected
                             ? 'bg-brand-blue-500 text-white border-brand-blue-500 shadow-sm'
                             : 'bg-white text-brand-black border-brand-gray-300 hover:border-brand-blue-500'
                         }`}
                       >
-                        {size}
+                            {option.value}
                       </button>
-                    ))}
-                  </div>
+                        )
+                      })}
                 </div>
-              )}
-
-              {/* Color Selection */}
-              {(product.colors && product.colors.length > 0) && (
-                <div>
-                  <label className="block text-sm font-medium text-brand-black mb-2">
-                    Color: {selectedColor}
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {product.colors.map((color) => (
-                      <button
-                        key={color}
-                        onClick={() => setSelectedColor(color)}
-                        className={`min-w-[44px] px-3 py-2 text-sm border transition-colors capitalize rounded-lg ${
-                          selectedColor === color
-                            ? 'bg-brand-blue-500 text-white border-brand-blue-500 shadow-sm'
-                            : 'bg-white text-brand-black border-brand-gray-300 hover:border-brand-blue-500'
-                        }`}
-                      >
-                        {color}
-                      </button>
-                    ))}
                   </div>
-                </div>
-              )}
+                )
+              })}
 
               {/* Stock Status with Progress Bar */}
               <div className="space-y-1.5">
-                {currentVariant.inStock && currentVariant.stockQuantity && currentVariant.stockQuantity > 0 ? (
+                {displayProduct.inStock && displayProduct.stockQuantity && displayProduct.stockQuantity > 0 ? (
                   <>
                     <div className="flex items-center gap-2">
                       <span className={`w-2 h-2 rounded-full ${
-                        currentVariant.stockQuantity <= 10 ? 'bg-orange-500' : 'bg-green-500'
+                        displayProduct.stockQuantity <= 10 ? 'bg-orange-500' : 'bg-green-500'
                       }`}></span>
                       <p className={`font-medium text-sm ${
-                        currentVariant.stockQuantity <= 10 ? 'text-orange-600' : 'text-green-600'
+                        displayProduct.stockQuantity <= 10 ? 'text-orange-600' : 'text-green-600'
                       }`}>
-                        {currentVariant.stockQuantity <= 10 
-                          ? `Low Stock - Only ${currentVariant.stockQuantity} left` 
-                          : 'In Stock'} ({currentVariant.stockQuantity} units) ready to be shipped
+                        {displayProduct.stockQuantity <= 10 
+                          ? `Low Stock - Only ${displayProduct.stockQuantity} left` 
+                          : 'In Stock'} ({displayProduct.stockQuantity} units) ready to be shipped
                       </p>
                     </div>
                     <div className="w-full bg-brand-gray-200 rounded-full h-1.5">
                       <div 
                         className={`h-1.5 rounded-full transition-all duration-300 ${
-                          currentVariant.stockQuantity <= 10 ? 'bg-orange-500' : 'bg-green-500'
+                          displayProduct.stockQuantity <= 10 ? 'bg-orange-500' : 'bg-green-500'
                         }`}
-                        style={{ width: `${Math.min((currentVariant.stockQuantity / 50) * 100, 100)}%` }}
+                        style={{ width: `${Math.min((displayProduct.stockQuantity / 50) * 100, 100)}%` }}
                       ></div>
                     </div>
                   </>
@@ -574,12 +805,37 @@ export default function QuickViewModal({
 
         {/* Fixed Bottom Actions */}
         <div className="flex-shrink-0 border-t border-brand-gray-200 p-4 sm:p-4 md:p-6 bg-white rounded-b-none sm:rounded-b-2xl safe-area-inset-bottom">
+          {/* Quantity Selector */}
+          {displayProduct.inStock && (
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-brand-black mb-2">Quantity</label>
+              <div className="flex items-center border border-brand-gray-300 rounded-lg w-fit">
+                <button
+                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                  className="px-3 py-2 text-brand-gray-600 hover:text-brand-black transition-colors"
+                  disabled={quantity <= 1}
+                >
+                  −
+                </button>
+                <span className="px-4 py-2 text-brand-black font-medium min-w-[2.5rem] text-center">
+                  {quantity}
+                </span>
+                <button
+                  onClick={() => setQuantity(quantity + 1)}
+                  className="px-3 py-2 text-brand-gray-600 hover:text-brand-black transition-colors"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-col sm:flex-row gap-3">
-            {!currentVariant.inStock ? (
+            {!displayProduct.inStock ? (
               onNotify ? (
                 <button
                   onClick={() => {
-                    onNotify(currentVariant)
+                    onNotify(displayProduct)
                     onClose()
                   }}
                   className="w-full sm:flex-1 bg-white text-brand-black border border-brand-gray-300 px-6 py-3.5 sm:py-3 text-sm font-medium hover:bg-brand-gray-50 active:bg-brand-gray-100 transition-all duration-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-blue-500 shadow-sm touch-manipulation"
@@ -603,7 +859,7 @@ export default function QuickViewModal({
                   Add to cart
                 </button>
                 <button
-                  onClick={() => onAddToWishlist(currentVariant)}
+                  onClick={() => onAddToWishlist(displayProduct, selectedValues.size, selectedValues.color)}
                   className="w-full sm:flex-1 bg-white text-brand-black border border-brand-gray-300 px-6 py-3.5 sm:py-3 text-sm font-medium hover:bg-brand-gray-50 active:bg-brand-gray-100 transition-all duration-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-blue-500 shadow-sm touch-manipulation"
                 >
                   Buy it now

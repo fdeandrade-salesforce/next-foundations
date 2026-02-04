@@ -10,7 +10,7 @@ import LoginModal from './LoginModal'
 import LogoutConfirmationModal from './LogoutConfirmationModal'
 import MiniCart, { CartItem } from './MiniCart'
 import Toast from './Toast'
-import { getCart, updateCartQuantity, removeFromCart, addToCart } from '../lib/cart'
+import { getCart, updateCartQuantity, removeFromCart, addToCart, updateCartItemFulfillment } from '../lib/cart'
 import { getAllProducts } from '../lib/products'
 import { logout } from '../lib/auth'
 import { Product } from './ProductListingPage'
@@ -143,6 +143,7 @@ export default function Navigation() {
   const pathname = usePathname()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null)
+  const [expandedMobileItems, setExpandedMobileItems] = useState<Set<string>>(new Set())
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [isAgentOpen, setIsAgentOpen] = useState(false)
   const [isLoginOpen, setIsLoginOpen] = useState(false)
@@ -173,19 +174,23 @@ export default function Navigation() {
     const defaultStoreName = 'Dorchester'
     const defaultStoreAddress = '26 District Avenue, Dorchester, MA 02125'
     
-    const pickupItems = items.filter((_, idx) => idx < 3)
-    
-    return items.map((item, index): ExtendedCartItem => {
-      const isPickup = index < 3
-      const isAvailable = isPickup ? getItemAvailability(item.id, defaultStoreId, pickupItems) : true
+    return items.map((item): ExtendedCartItem => {
+      // Use stored fulfillmentMethod, default to 'delivery' if not set
+      const fulfillmentMethod = item.fulfillmentMethod || 'delivery'
+      const isPickup = fulfillmentMethod === 'pickup'
+      
+      // Get pickup items for availability check (only for pickup items)
+      const pickupItems = items.filter(i => (i.fulfillmentMethod || 'delivery') === 'pickup')
+      const isAvailable = isPickup ? getItemAvailability(item.id, item.storeId || defaultStoreId, pickupItems) : true
       
       return {
         ...item,
-        fulfillmentMethod: (isPickup ? 'pickup' : 'delivery') as 'pickup' | 'delivery',
-        storeId: isPickup ? defaultStoreId : undefined,
-        storeName: isPickup ? defaultStoreName : undefined,
-        storeAddress: isPickup ? defaultStoreAddress : undefined,
-        shippingAddress: !isPickup ? '478 Artisan Way, Somerville, MA 02145' : undefined,
+        fulfillmentMethod: fulfillmentMethod as 'pickup' | 'delivery',
+        // Only set store info if it's pickup and not already set
+        storeId: isPickup ? (item.storeId || defaultStoreId) : undefined,
+        storeName: isPickup ? (item.storeName || defaultStoreName) : undefined,
+        storeAddress: isPickup ? (item.storeAddress || defaultStoreAddress) : undefined,
+        shippingAddress: !isPickup ? (item.shippingAddress || '478 Artisan Way, Somerville, MA 02145') : undefined,
         isAvailableAtStore: isPickup ? isAvailable : undefined,
       }
     })
@@ -308,14 +313,14 @@ export default function Navigation() {
   const activeNavItem = navigationItems.find(item => item.label === activeDropdown)
 
   return (
-    <nav className="relative z-50 bg-white border-b border-brand-gray-200">
+    <nav className="sticky top-0 z-50 bg-white border-b border-brand-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link href="/" className="flex-shrink-0 flex items-center gap-2">
             <img 
               src="/images/logo.svg" 
-              alt="Market Street" 
+              alt="Salesforce Foundations" 
               className="h-10 w-auto"
             />
           </Link>
@@ -409,33 +414,63 @@ export default function Navigation() {
         {/* Mobile Menu */}
         {isMenuOpen && (
           <div className="md:hidden py-4 border-t border-brand-gray-200">
-            {navigationItems.map((item) => (
-              <div key={item.label}>
-                <Link
-                  href={item.href}
-                  className={`block py-3 px-4 text-brand-black hover:bg-brand-gray-50 transition-colors font-medium ${item.className || ''}`}
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  {item.label}
-                </Link>
-                {item.children && (
-                  <div className="pl-8 pb-2">
-                    {item.children.flatMap((column) =>
-                      column.items.map((link) => (
-                        <Link
-                          key={link.label}
-                          href={link.href}
-                          className="block py-2 text-sm text-brand-gray-600 hover:text-brand-black transition-colors"
-                          onClick={() => setIsMenuOpen(false)}
-                        >
-                          {link.label}
-                        </Link>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+            {navigationItems.map((item) => {
+              const isExpanded = expandedMobileItems.has(item.label)
+              const hasChildren = item.children && item.children.length > 0
+              
+              return (
+                <div key={item.label}>
+                  {hasChildren ? (
+                    <button
+                      onClick={() => {
+                        const newExpanded = new Set(expandedMobileItems)
+                        if (isExpanded) {
+                          newExpanded.delete(item.label)
+                        } else {
+                          newExpanded.add(item.label)
+                        }
+                        setExpandedMobileItems(newExpanded)
+                      }}
+                      className={`w-full flex items-center justify-between py-3 px-4 text-brand-black hover:bg-brand-gray-50 transition-colors font-medium ${item.className || ''}`}
+                    >
+                      <span>{item.label}</span>
+                      <svg
+                        className={`w-5 h-5 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                  ) : (
+                    <Link
+                      href={item.href}
+                      className={`block py-3 px-4 text-brand-black hover:bg-brand-gray-50 transition-colors font-medium ${item.className || ''}`}
+                      onClick={() => setIsMenuOpen(false)}
+                    >
+                      {item.label}
+                    </Link>
+                  )}
+                  {hasChildren && isExpanded && (
+                    <div className="pl-4 pb-2 bg-brand-gray-50">
+                      {item.children?.flatMap((column) =>
+                        column.items.map((link) => (
+                          <Link
+                            key={link.label}
+                            href={link.href}
+                            className="block py-2 px-4 text-sm text-brand-gray-600 hover:text-brand-black transition-colors"
+                            onClick={() => setIsMenuOpen(false)}
+                          >
+                            {link.label}
+                          </Link>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
@@ -540,7 +575,23 @@ export default function Navigation() {
         }}
         items={cartItems}
         onUpdateQuantity={(itemId, quantity) => {
-          updateCartQuantity(itemId, quantity)
+          // Find the current item to check its quantity
+          const currentItem = cartItems.find(item => item.id === itemId)
+          if (!currentItem) return
+          
+          // Count total items excluding surprise gifts
+          const totalCartItems = cartItems
+            .filter(item => !item.isSurpriseGift)
+            .reduce((sum, item) => sum + item.quantity, 0)
+          
+          // If there's only 1 item total in cart and current quantity is 1,
+          // and user clicks minus (which results in quantity staying at 1 due to Math.max),
+          // remove it directly (no confirmation modal for MiniCart quick action)
+          if (currentItem.quantity === 1 && totalCartItems === 1 && quantity === 1) {
+            removeFromCart(itemId)
+          } else {
+            updateCartQuantity(itemId, quantity)
+          }
         }}
         onRemoveItem={(itemId) => {
           removeFromCart(itemId)
@@ -598,8 +649,16 @@ export default function Navigation() {
         onFulfillmentChange={(itemId, method) => {
           const defaultStoreId = '1'
           const defaultStoreName = 'Dorchester'
-          const defaultStoreAddress = '123 Main St, Dorchester, MA 02124'
+          const defaultStoreAddress = '26 District Avenue, Dorchester, MA 02125'
           
+          // Persist to localStorage
+          if (method === 'pickup') {
+            updateCartItemFulfillment(itemId, 'pickup', defaultStoreId, defaultStoreName, defaultStoreAddress)
+          } else {
+            updateCartItemFulfillment(itemId, 'delivery')
+          }
+          
+          // Update local state
           const updatedItems: ExtendedCartItem[] = cartItems.map((item): ExtendedCartItem => {
             if (item.id === itemId) {
               if (method === 'pickup') {

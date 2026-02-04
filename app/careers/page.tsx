@@ -31,7 +31,7 @@ export default function CareersPage() {
           {/* Introduction */}
           <section className="mb-16 md:mb-24">
             <p className="text-body-lg text-brand-gray-700 leading-relaxed mb-6">
-              At Market Street, we&apos;re building a team of passionate individuals who share our commitment to thoughtful design, exceptional customer experience, and sustainable business practices. We believe great products come from great teams, and we&apos;re always looking for talented people to join us.
+              At Salesforce Foundations, we&apos;re building a team of passionate individuals who share our commitment to thoughtful design, exceptional customer experience, and sustainable business practices. We believe great products come from great teams, and we&apos;re always looking for talented people to join us.
             </p>
             <p className="text-body-lg text-brand-gray-700 leading-relaxed">
               If you&apos;re driven by purpose, inspired by design, and excited about creating meaningful experiences, we&apos;d love to hear from you.
@@ -108,7 +108,7 @@ export default function CareersPage() {
                   Submit Your Application
                 </h3>
                 <p className="text-body text-brand-gray-700 leading-relaxed mb-4">
-                  Send your resume and a cover letter explaining why you&apos;re interested in joining Market Street and how your experience aligns with our mission.
+                  Send your resume and a cover letter explaining why you&apos;re interested in joining Salesforce Foundations and how your experience aligns with our mission.
                 </p>
                 <p className="text-body text-brand-gray-700 leading-relaxed">
                   <strong className="text-brand-black">Email:</strong>{' '}
@@ -179,7 +179,7 @@ export default function CareersPage() {
               Questions?
             </h2>
             <p className="text-body-lg text-brand-gray-700 leading-relaxed mb-6">
-              If you have questions about working at Market Street or want to learn more about our team culture, we&apos;re here to help.
+              If you have questions about working at Salesforce Foundations or want to learn more about our team culture, we&apos;re here to help.
             </p>
             <div className="bg-brand-gray-50 rounded-lg p-6 md:p-8">
               <p className="text-body text-brand-gray-700 mb-4">
