@@ -1,8 +1,8 @@
 /**
  * Preview page for 403 Forbidden UI.
- * Visit /403 to see the 403 error page design.
+ * Visit /preview/403 to see the 403 error page design.
  */
-import ErrorPageWithCrossSell from '../../components/ErrorPageWithCrossSell'
+import ErrorPageWithCrossSell from '../../../components/ErrorPageWithCrossSell'
 
 export default function ForbiddenPreviewPage() {
   return (

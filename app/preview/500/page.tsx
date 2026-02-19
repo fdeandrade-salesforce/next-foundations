@@ -1,8 +1,8 @@
 /**
  * Preview page for 500 Internal Server Error UI.
- * Visit /500 to see the 500 error page design.
+ * Visit /preview/500 to see the 500 error page design.
  */
-import ErrorPageWithCrossSell from '../../components/ErrorPageWithCrossSell'
+import ErrorPageWithCrossSell from '../../../components/ErrorPageWithCrossSell'
 
 export default function ServerErrorPreviewPage() {
   return (

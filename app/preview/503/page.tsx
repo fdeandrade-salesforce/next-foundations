@@ -1,8 +1,8 @@
 /**
  * Preview page for 503 Service Unavailable UI.
- * Visit /503 to see the 503 error page design.
+ * Visit /preview/503 to see the 503 error page design.
  */
-import ErrorPageWithCrossSell from '../../components/ErrorPageWithCrossSell'
+import ErrorPageWithCrossSell from '../../../components/ErrorPageWithCrossSell'
 
 export default function ServiceUnavailablePreviewPage() {
   return (
