@@ -8,7 +8,12 @@ interface AgentSidebarProps {
   onClose: () => void
   initialMessage?: string
   searchQuery?: string
-  onSetAgentFilters?: (filters: import('../context/AgentContext').AgentFilters | null) => void
+  onSetAgentFilters?: (
+    filters:
+      | import('../context/AgentContext').AgentFilters
+      | null
+      | ((prev: import('../context/AgentContext').AgentFilters | null) => import('../context/AgentContext').AgentFilters | null)
+  ) => void
   onInitialMessageConsumed?: () => void
 }
 
@@ -173,11 +178,11 @@ export default function AgentSidebar({ isOpen, onClose, initialMessage, searchQu
           }
           if (filterAction.type === 'color') {
             const colors = [...(base.colors ?? []), filterAction.value]
-            return { ...base, colors: [...new Set(colors)] }
+            return { ...base, colors: Array.from(new Set(colors)) }
           }
           if (filterAction.type === 'size') {
             const sizes = [...(base.sizes ?? []), filterAction.value]
-            return { ...base, sizes: [...new Set(sizes)] }
+            return { ...base, sizes: Array.from(new Set(sizes)) }
           }
           if (filterAction.type === 'matteFinish') {
             return { ...base, matteFinish: true }
