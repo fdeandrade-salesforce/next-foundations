@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
+import ModalHeader from './ModalHeader'
 import { Product } from './ProductListingPage'
 import LazyImage from './LazyImage'
 
@@ -39,31 +40,22 @@ export default function NotifyMeModal({
     <div className="fixed inset-0 z-50 overflow-y-auto">
       {/* Backdrop */}
       <div
+        data-modal-overlay
         className="fixed inset-0 backdrop-default transition-opacity"
         onClick={onClose}
       />
 
       {/* Modal */}
-      <div className="flex min-h-full items-center justify-center p-4">
+      <div data-modal-center className="flex min-h-full items-center justify-center p-4">
         <div
           className="relative bg-card rounded-modal shadow-modal max-w-md w-full max-h-[90vh] overflow-hidden"
           style={{ animation: 'scale-in 0.2s ease-out forwards' }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Close Button */}
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-2 text-brand-gray-400 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors z-10"
-            aria-label="Close"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-
           {/* Header */}
-          <div className="pt-8 pb-6 px-6">
-            <h2 className="text-2xl font-semibold text-brand-black mb-6">Notify Me When Available</h2>
+          <ModalHeader title="Notify Me When Available" onClose={onClose} closeAriaLabel="Close" />
+
+          <div className="px-6 py-4 pb-6">
 
             {/* Product Information */}
             <div className="flex gap-4 mb-6">

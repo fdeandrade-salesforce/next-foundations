@@ -36,12 +36,8 @@ export class MockOrderRepository implements IOrderRepository {
       }
 
       if (filters.searchTerm) {
-        const term = filters.searchTerm.toLowerCase()
-        filtered = filtered.filter(
-          (o) =>
-            o.orderNumber.toLowerCase().includes(term) ||
-            o.items.some((item) => item.name.toLowerCase().includes(term))
-        )
+        const term = filters.searchTerm.toLowerCase().trim().replace(/^#/, '')
+        filtered = filtered.filter((o) => o.orderNumber.toLowerCase().includes(term))
       }
     }
 

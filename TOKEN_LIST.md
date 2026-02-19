@@ -14,13 +14,14 @@ This document provides a comprehensive list of all design tokens used in the Nex
 6. [Product Badge Colors](#product-badge-colors)
 7. [Loyalty Badge Colors](#loyalty-badge-colors)
 8. [Star Rating Colors](#star-rating-colors)
-9. [Shadow Tokens](#shadow-tokens)
-10. [Z-Index Tokens](#z-index-tokens)
-11. [Opacity Tokens](#opacity-tokens)
-12. [Transition/Duration Tokens](#transitionduration-tokens)
-13. [Component Spacing Tokens](#component-spacing-tokens)
-14. [Typography Tokens](#typography-tokens)
-15. [Breakpoint Tokens](#breakpoint-tokens)
+9. [Agentic Experience Tokens](#agentic-experience-tokens)
+10. [Shadow Tokens](#shadow-tokens)
+11. [Z-Index Tokens](#z-index-tokens)
+12. [Opacity Tokens](#opacity-tokens)
+13. [Transition/Duration Tokens](#transitionduration-tokens)
+14. [Component Spacing Tokens](#component-spacing-tokens)
+15. [Typography Tokens](#typography-tokens)
+16. [Breakpoint Tokens](#breakpoint-tokens)
 
 ---
 
@@ -208,6 +209,26 @@ This document provides a comprehensive list of all design tokens used in the Nex
 | `--star-empty` | `oklch(0.88 0 0)` | Empty star |
 
 **Tailwind Classes:** `bg-star-filled`, `bg-star-empty`, `text-star-filled`, `text-star-empty`
+
+---
+
+## Agentic Experience Tokens
+
+| Token | Light Mode | Dark Mode | Usage |
+|-------|------------|-----------|-------|
+| `--agentic` | `oklch(0.98 0 0)` | `oklch(0.14 0 0)` | Agent panel background |
+| `--agentic-foreground` | `oklch(0.13 0 0)` | `oklch(0.98 0 0)` | Agent panel text |
+| `--agentic-primary` | `oklch(0.59 0.2 264)` | `oklch(0.98 0 0)` | Primary actions (buttons, user messages) |
+| `--agentic-primary-foreground` | `oklch(1 0 0)` | `oklch(0 0 0)` | Primary text |
+| `--agentic-accent` | `oklch(0.96 0.01 264)` | `oklch(0.20 0.02 264)` | Accent/hover states |
+| `--agentic-accent-foreground` | `oklch(0.13 0 0)` | `oklch(0.98 0 0)` | Accent text |
+| `--agentic-border` | `oklch(0.91 0 0)` | `oklch(1 0 0 / 10%)` | Borders |
+| `--agentic-ring` | `oklch(0.59 0.2 264)` | `oklch(0.62 0 0)` | Focus ring |
+| `--agentic-muted` | `oklch(0.96 0 0)` | `oklch(0.20 0 0)` | Muted background |
+| `--agentic-muted-foreground` | `oklch(0.45 0 0)` | `oklch(0.62 0 0)` | Muted text |
+| `--agentic-input` | `oklch(0.96 0 0)` | `oklch(0.20 0 0)` | Input background |
+
+**Tailwind Classes:** `bg-agentic`, `text-agentic-foreground`, `bg-agentic-primary`, `text-agentic-primary-foreground`, `bg-agentic-accent`, `text-agentic-accent-foreground`, `border-agentic-border`, `bg-agentic-muted`, `text-agentic-muted-foreground`, `bg-agentic-input`
 
 ---
 

@@ -1,6 +1,7 @@
 'use client'
 
 import React from 'react'
+import ModalHeader from './ModalHeader'
 
 interface PayPalModalProps {
   isOpen: boolean
@@ -18,30 +19,23 @@ export default function PayPalModal({ isOpen, onClose, price }: PayPalModalProps
     <div className="fixed inset-0 z-50 overflow-y-auto">
       {/* Backdrop */}
       <div 
+        data-modal-overlay
         className="fixed inset-0 backdrop-default transition-opacity"
         onClick={onClose}
       />
 
       {/* Modal */}
-      <div className="flex min-h-full items-center justify-center p-4">
+      <div data-modal-center className="flex min-h-full items-center justify-center p-4">
         <div 
           className="relative bg-card rounded-modal shadow-modal max-w-2xl w-full max-h-[90vh] overflow-hidden"
           style={{ animation: 'scale-in 0.2s ease-out forwards' }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Close Button */}
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-2 text-brand-gray-400 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors z-10"
-            aria-label="Close"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-
           {/* Header */}
-          <div className="pt-8 pb-4 px-6 border-b border-brand-gray-200">
+          <ModalHeader title="Pay in 4 with PayPal" onClose={onClose} closeAriaLabel="Close" />
+
+          {/* Header content */}
+          <div className="pt-4 pb-4 px-6 border-b border-brand-gray-200">
             <div className="flex items-center gap-3 mb-3">
               {/* PayPal Logo */}
               <div>

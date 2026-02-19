@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Product } from './ProductListingPage'
 import StoreLocatorModal from './StoreLocatorModal'
+import ModalHeader from './ModalHeader'
 import { getAllProducts } from '../lib/products'
 
 export interface CartItem {
@@ -284,6 +285,7 @@ export default function MiniCart({
     <>
       {/* Overlay */}
       <div
+        data-modal-overlay
         className="fixed inset-0 bg-black/40 z-40 transition-opacity"
         onClick={onClose}
         aria-hidden="true"
@@ -292,6 +294,7 @@ export default function MiniCart({
       {/* Drawer */}
       <div
         ref={drawerRef}
+        data-modal-panel
         className="fixed right-0 top-0 h-full w-full max-w-md bg-white z-50 flex flex-col shadow-xl"
         style={{ animation: 'slideInRight 0.3s ease-out' }}
         role="dialog"
@@ -299,20 +302,15 @@ export default function MiniCart({
         aria-labelledby="mini-cart-title"
       >
         {/* Header */}
-        <div className="flex-shrink-0 flex items-center justify-between p-4 md:p-6 border-b border-brand-gray-200">
-          <h2 id="mini-cart-title" className="text-lg md:text-xl font-semibold text-brand-black">
-            My Cart ({items.length})
-          </h2>
-          <button
-            ref={firstFocusableRef}
-            onClick={onClose}
-            className="p-2 text-brand-black hover:text-brand-gray-600 transition-colors rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-blue-500"
-            aria-label="Close cart"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+        <div className="flex-shrink-0 border-b border-brand-gray-200">
+          <ModalHeader
+            id="mini-cart-title"
+            title={`My Cart (${items.length})`}
+            onClose={onClose}
+            closeAriaLabel="Close cart"
+            closeButtonRef={firstFocusableRef}
+            className="py-4 px-4 md:px-6 !border-0"
+          />
         </div>
 
         {/* Free Shipping Progress */}

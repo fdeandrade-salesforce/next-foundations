@@ -1,16 +1,17 @@
 'use client'
 
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Product } from './ProductListingPage'
-import ProductCard from './ProductCard'
+import ProductCarousel from './ProductCarousel'
 import Navigation from './Navigation'
 import Footer from './Footer'
 import AnnouncementBar from './AnnouncementBar'
 import ImageZoom from './ImageZoom'
 import ReviewSection from './ReviewSection'
 import QASection from './QASection'
+import AskAssistantSection from './AskAssistantSection'
 import StoreLocatorModal from './StoreLocatorModal'
 import LazyImage from './LazyImage'
 import Model3DViewer from './Model3DViewer'
@@ -22,6 +23,7 @@ import { addToCart } from '../lib/cart'
 import { toggleWishlist, getWishlistIds, isInWishlist as checkIsInWishlist } from '../lib/wishlist'
 import QuickViewModal from './QuickViewModal'
 import NotifyMeModal from './NotifyMeModal'
+import ModalHeader from './ModalHeader'
 import DeliveryEstimates, { DeliveryEstimateState } from './DeliveryEstimates'
 import { getReviewRepo } from '../src/data'
 import MobileAddToCartButton from './MobileAddToCartButton'
@@ -148,7 +150,13 @@ export default function ProductDetailPage({
 }: ProductDetailPageProps) {
   const router = useRouter()
   const [reviews, setReviews] = useState<Review[]>(reviewsProp || [])
+  const [expandReviewsTrigger, setExpandReviewsTrigger] = useState(0)
   
+  const scrollToReviewsAndExpand = useCallback(() => {
+    setExpandReviewsTrigger((t) => t + 1)
+    document.getElementById('reviews-section')?.scrollIntoView({ behavior: 'smooth' })
+  }, [])
+
   // Load reviews from repository if not provided
   // We need to load reviews for all variants of the product, not just the base product
   useEffect(() => {
@@ -1261,12 +1269,7 @@ export default function ProductDetailPage({
             {displayProduct.rating !== undefined && (
               <div className="relative group">
                 <button 
-                  onClick={() => {
-                    const reviewsSection = document.getElementById('reviews-section')
-                    if (reviewsSection) {
-                      reviewsSection.scrollIntoView({ behavior: 'smooth' })
-                    }
-                  }}
+                  onClick={scrollToReviewsAndExpand}
                   className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer"
                 >
                   <StarRating rating={displayProduct.rating} size="md" />
@@ -1284,10 +1287,7 @@ export default function ProductDetailPage({
                     <button 
                       onClick={(e) => {
                         e.stopPropagation()
-                        const reviewsSection = document.getElementById('reviews-section')
-                        if (reviewsSection) {
-                          reviewsSection.scrollIntoView({ behavior: 'smooth' })
-                        }
+                        scrollToReviewsAndExpand()
                       }}
                       className="text-brand-gray-400 hover:text-brand-gray-600"
                     >
@@ -1345,10 +1345,7 @@ export default function ProductDetailPage({
                   <button 
                     onClick={(e) => {
                       e.stopPropagation()
-                      const reviewsSection = document.getElementById('reviews-section')
-                      if (reviewsSection) {
-                        reviewsSection.scrollIntoView({ behavior: 'smooth' })
-                      }
+                      scrollToReviewsAndExpand()
                     }}
                     className="mt-4 text-sm text-brand-blue-600 hover:text-brand-blue-700 hover:underline"
                   >
@@ -1935,6 +1932,15 @@ export default function ProductDetailPage({
                   </div>
                 </div>
               </div>
+
+              {/* Ask Assistant - AI-generated product questions */}
+              <AskAssistantSection
+                productName={displayProduct.name}
+                productCategory={product.category}
+                productSubcategory={product.subcategory}
+                hasSizes={!!(product.size && product.size.length > 0)}
+                hasColors={!!(product.colors && product.colors.length > 0)}
+              />
             </div>
           </div>
         </div>
@@ -2051,73 +2057,40 @@ export default function ProductDetailPage({
             reviews={reviews}
             averageRating={displayProduct.rating || 4.5}
             totalReviews={currentVariant.reviewCount || reviews.length}
+            openReviewOnMount={initialSelection?.review === 'true'}
+            expandFromAnchor={expandReviewsTrigger}
           />
         </div>
 
         {/* Complete the Look */}
         {suggestedProducts.length > 0 && (
-          <section className="mt-16">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl font-medium text-brand-black">Complete the look</h2>
-              <p className="text-sm text-brand-gray-600 mt-1">Description</p>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
-              {suggestedProducts.slice(0, 4).map((prod) => (
-                <ProductCard
-                  key={prod.id}
-                  product={prod}
-                  onUnifiedAction={handleUnifiedAction}
-                  onAddToWishlist={handleAddToWishlist}
-                  isInWishlist={wishlist.includes(prod.id)}
-                  allProducts={suggestedProducts}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* You May Also Like */}
-        {suggestedProducts.length > 4 && (
-          <section className="mt-16 bg-brand-gray-50 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-12">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl font-medium text-brand-black">You may also like</h2>
-              <p className="text-sm text-brand-gray-600 mt-1">Description</p>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
-              {suggestedProducts.slice(4, 8).map((prod) => (
-                <ProductCard
-                  key={prod.id}
-                  product={prod}
-                  onUnifiedAction={handleUnifiedAction}
-                  onAddToWishlist={handleAddToWishlist}
-                  isInWishlist={wishlist.includes(prod.id)}
-                  allProducts={suggestedProducts}
-                />
-              ))}
-            </div>
-          </section>
+          <ProductCarousel
+            id="complete-the-look"
+            title="Complete the look"
+            subtitle="Description"
+            shopAllLink="/shop"
+            products={suggestedProducts}
+            onUnifiedAction={handleUnifiedAction}
+            onAddToWishlist={handleAddToWishlist}
+            wishlistIds={wishlist}
+            allProducts={suggestedProducts}
+          />
         )}
 
         {/* Recently Viewed */}
         {recentlyViewed.length > 0 && (
-          <section className="mt-16">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl font-medium text-brand-black">Recently viewed</h2>
-              <p className="text-sm text-brand-gray-600 mt-1">Description</p>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-6">
-              {recentlyViewed.slice(0, 5).map((prod) => (
-                <ProductCard
-                  key={prod.id}
-                  product={prod}
-                  onUnifiedAction={handleUnifiedAction}
-                  onAddToWishlist={handleAddToWishlist}
-                  isInWishlist={wishlist.includes(prod.id)}
-                  allProducts={recentlyViewed}
-                />
-              ))}
-            </div>
-          </section>
+          <ProductCarousel
+            id="recently-viewed"
+            title="Recently viewed"
+            subtitle="Description"
+            shopAllLink="/shop"
+            products={recentlyViewed}
+            onUnifiedAction={handleUnifiedAction}
+            onAddToWishlist={handleAddToWishlist}
+            wishlistIds={wishlist}
+            allProducts={recentlyViewed}
+            sectionClassName="bg-brand-gray-50 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8"
+          />
         )}
 
       </main>
@@ -2167,27 +2140,28 @@ export default function ProductDetailPage({
       {/* Virtual Try-On Modal */}
       {showVirtualTryOn && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowVirtualTryOn(false)} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowVirtualTryOn(false)} />
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
               {/* Header */}
               <div className="flex items-center justify-between p-4 border-b border-brand-gray-200">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-brand-blue-100 rounded-lg flex items-center justify-center">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 bg-brand-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
                     <svg className="w-5 h-5 text-brand-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                     </svg>
                   </div>
-                  <div>
-                    <h2 className="text-lg font-medium text-brand-black">Virtual Try-On</h2>
-                    <p className="text-sm text-brand-gray-600">See how {product.name} looks in your space</p>
+                  <div className="min-w-0">
+                    <h2 className="text-lg font-semibold text-brand-black">Virtual Try-On</h2>
+                    <p className="text-sm text-brand-gray-600 truncate">See how {product.name} looks in your space</p>
                   </div>
                 </div>
                 <button
                   onClick={() => setShowVirtualTryOn(false)}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                  className="modal-header__close flex-shrink-0"
+                  aria-label="Close"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>

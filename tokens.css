@@ -126,6 +126,31 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* -- Agentic Experience Colors (for future use) -- */
+  --color-agentic: var(--agentic);
+  --color-agentic-foreground: var(--agentic-foreground);
+  --color-agentic-primary: var(--agentic-primary);
+  --color-agentic-primary-foreground: var(--agentic-primary-foreground);
+  --color-agentic-accent: var(--agentic-accent);
+  --color-agentic-accent-foreground: var(--agentic-accent-foreground);
+  --color-agentic-border: var(--agentic-border);
+  --color-agentic-ring: var(--agentic-ring);
+  --color-agentic-muted: var(--agentic-muted);
+  --color-agentic-muted-foreground: var(--agentic-muted-foreground);
+  --color-agentic-input: var(--agentic-input);
+
+  /* -- Header Colors -- */
+  --color-header: var(--header);
+  --color-header-foreground: var(--header-foreground);
+  --color-header-primary: var(--header-primary);
+  --color-header-primary-foreground: var(--header-primary-foreground);
+  --color-header-accent: var(--header-accent);
+  --color-header-accent-foreground: var(--header-accent-foreground);
+  --color-header-muted: var(--header-muted);
+  --color-header-muted-foreground: var(--header-muted-foreground);
+  --color-header-border: var(--header-border);
+  --color-header-ring: var(--header-ring);
 }
 
 /*---break---*/
@@ -241,6 +266,31 @@
   --sidebar-border: oklch(0.91 0 0);
   --sidebar-ring: oklch(0.59 0.2 264);
 
+  /* -- Agentic Experience Tokens -- */
+  --agentic: oklch(0.98 0 0);
+  --agentic-foreground: oklch(0.13 0 0);
+  --agentic-primary: oklch(0.59 0.2 264);
+  --agentic-primary-foreground: oklch(1 0 0);
+  --agentic-accent: oklch(0.96 0.01 264);
+  --agentic-accent-foreground: oklch(0.13 0 0);
+  --agentic-border: oklch(0.91 0 0);
+  --agentic-ring: oklch(0.59 0.2 264);
+  --agentic-muted: oklch(0.96 0 0);
+  --agentic-muted-foreground: oklch(0.45 0 0);
+  --agentic-input: oklch(0.96 0 0);
+
+  /* -- Header Tokens -- */
+  --header: oklch(1 0 0);
+  --header-foreground: oklch(0.13 0 0);
+  --header-primary: oklch(0.59 0.2 264);
+  --header-primary-foreground: oklch(1 0 0);
+  --header-accent: oklch(0.96 0 0);
+  --header-accent-foreground: oklch(0.13 0 0);
+  --header-muted: oklch(0.96 0 0);
+  --header-muted-foreground: oklch(0.46 0 0);
+  --header-border: oklch(0.91 0 0);
+  --header-ring: oklch(0.59 0.2 264);
+
   /* -- Shadow Tokens -- */
   /* Base scale only (component-specific shadows removed - use base shadows directly) */
   --shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 5%);
@@ -331,6 +381,31 @@
   --sidebar-accent-foreground: oklch(0.98 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.62 0 0);
+
+  /* -- Agentic Tokens (dark mode) -- */
+  --agentic: oklch(0.14 0 0);
+  --agentic-foreground: oklch(0.98 0 0);
+  --agentic-primary: oklch(0.98 0 0);
+  --agentic-primary-foreground: oklch(0 0 0);
+  --agentic-accent: oklch(0.20 0.02 264);
+  --agentic-accent-foreground: oklch(0.98 0 0);
+  --agentic-border: oklch(1 0 0 / 10%);
+  --agentic-ring: oklch(0.62 0 0);
+  --agentic-muted: oklch(0.20 0 0);
+  --agentic-muted-foreground: oklch(0.62 0 0);
+  --agentic-input: oklch(0.20 0 0);
+
+  /* -- Header Tokens (dark mode) -- */
+  --header: oklch(0.14 0 0);
+  --header-foreground: oklch(0.98 0 0);
+  --header-primary: oklch(0.98 0 0);
+  --header-primary-foreground: oklch(0 0 0);
+  --header-accent: oklch(0.20 0 0);
+  --header-accent-foreground: oklch(0.98 0 0);
+  --header-muted: oklch(0.20 0 0);
+  --header-muted-foreground: oklch(0.62 0 0);
+  --header-border: oklch(1 0 0 / 10%);
+  --header-ring: oklch(0.62 0 0);
 
   /* -- Brand Colors (same in dark mode) -- */
   --brand-black: oklch(0 0 0);

@@ -10,7 +10,7 @@ import ErrorBoundary from '../../../components/ErrorBoundary'
 // 2. Order detail view from order history
 export default function OrderPage({ params }: { params: { orderNumber: string } }) {
   const searchParams = useSearchParams()
-  const isSuccessfulCheckout = searchParams.get('success') === 'true'
+  const isSuccessfulCheckout = searchParams?.get('success') === 'true'
   
   // If this is a successful checkout, show the confirmation page
   if (isSuccessfulCheckout) {

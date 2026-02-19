@@ -126,6 +126,7 @@ export interface OrderItem {
   originalPrice?: number
   store?: string
   shippingGroup?: string
+  bundleSetId?: string
 }
 
 export interface ShippingGroup {

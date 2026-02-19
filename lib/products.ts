@@ -95,6 +95,14 @@ export async function getNewReleasesByCategory(
 }
 
 /**
+ * Search products by query (name, category, subcategory, description)
+ */
+export async function searchProducts(query: string, limit?: number): Promise<Product[]> {
+  const repo = getProductRepo()
+  return repo.searchProducts(query, limit ?? 20)
+}
+
+/**
  * List products with filters, sorting, and pagination
  */
 export async function listProducts(

@@ -7,6 +7,7 @@ import AnnouncementBar from '../../components/AnnouncementBar'
 import Footer from '../../components/Footer'
 import ContactSection from '../../components/ContactSection'
 import PromoBanner from '../../components/PromoBanner'
+import ProductCategoriesGrid from '../../components/ProductCategoriesGrid'
 
 export default function AboutPage() {
   return (
@@ -153,45 +154,29 @@ export default function AboutPage() {
           </div>
 
           {/* Section 4: What We Stand For */}
-          <section className="mb-16 md:mb-24">
-            <h3 className="text-h4 md:text-h3 font-medium text-brand-black mb-8">
-              What We Stand For
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-              <div className="border-l-4 border-brand-blue-500 pl-6">
-                <h4 className="text-h6 font-semibold text-brand-black mb-2">
-                  Design with purpose
-                </h4>
-                <p className="text-body text-brand-gray-700">
-                  Nothing we create is accidental. Every form, function, and interaction serves a clear purpose in making your life better.
-                </p>
-              </div>
-              <div className="border-l-4 border-brand-blue-500 pl-6">
-                <h4 className="text-h6 font-semibold text-brand-black mb-2">
-                  Technology that disappears
-                </h4>
-                <p className="text-body text-brand-gray-700">
-                  Innovation should make things easier, not more complex. We build tools that fade into the background so you can focus on what matters.
-                </p>
-              </div>
-              <div className="border-l-4 border-brand-blue-500 pl-6">
-                <h4 className="text-h6 font-semibold text-brand-black mb-2">
-                  People over profit
-                </h4>
-                <p className="text-body text-brand-gray-700">
-                  Your experience, your needs, and your trust guide every decision we make. We&apos;re building relationships, not just making sales.
-                </p>
-              </div>
-              <div className="border-l-4 border-brand-blue-500 pl-6">
-                <h4 className="text-h6 font-semibold text-brand-black mb-2">
-                  Sustainability in motion
-                </h4>
-                <p className="text-body text-brand-gray-700">
-                  We&apos;re committed to responsible sourcing, ethical partnerships, and practices that protect our planet for future generations.
-                </p>
-              </div>
-            </div>
-          </section>
+          <ProductCategoriesGrid
+            title="What We Stand For"
+            variant="value"
+            cards={[
+              {
+                title: 'Design with purpose',
+                description: 'Nothing we create is accidental. Every form, function, and interaction serves a clear purpose in making your life better.',
+              },
+              {
+                title: 'Technology that disappears',
+                description: 'Innovation should make things easier, not more complex. We build tools that fade into the background so you can focus on what matters.',
+              },
+              {
+                title: 'People over profit',
+                description: "Your experience, your needs, and your trust guide every decision we make. We're building relationships, not just making sales.",
+              },
+              {
+                title: 'Sustainability in motion',
+                description: "We're committed to responsible sourcing, ethical partnerships, and practices that protect our planet for future generations.",
+              },
+            ]}
+            className="mb-16 md:mb-24"
+          />
 
           {/* Brand Commitment Banner 3 */}
           <div className="mb-16 md:mb-24">

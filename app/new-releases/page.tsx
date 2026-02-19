@@ -1,10 +1,10 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import Navigation from '../../components/Navigation'
 import AnnouncementBar from '../../components/AnnouncementBar'
-import ProductCard from '../../components/ProductCard'
+import ProductCarousel from '../../components/ProductCarousel'
 import Footer from '../../components/Footer'
 import QuickViewModal from '../../components/QuickViewModal'
 import NotifyMeModal from '../../components/NotifyMeModal'
@@ -14,224 +14,6 @@ import { getNewReleases, getNewReleasesByCategory, getAllProductsWithVariants } 
 import { Product } from '../../components/ProductListingPage'
 import { toggleWishlist, getWishlistIds } from '../../lib/wishlist'
 import { addToCart } from '../../lib/cart'
-
-interface CarouselSectionProps {
-  id: string
-  title: string
-  shopAllLink: string
-  products: Product[]
-  onUnifiedAction: (product: Product) => void
-  onAddToWishlist: (product: Product, size?: string, color?: string) => void
-  wishlistIds: string[]
-  allProducts: Product[]
-}
-
-function CarouselSection({
-  id,
-  title,
-  shopAllLink,
-  products,
-  onUnifiedAction,
-  onAddToWishlist,
-  wishlistIds,
-  allProducts,
-}: CarouselSectionProps) {
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const [isDragging, setIsDragging] = useState(false)
-  const [startX, setStartX] = useState(0)
-  const [scrollLeft, setScrollLeft] = useState(0)
-  const [canScrollLeft, setCanScrollLeft] = useState(false)
-  const [canScrollRight, setCanScrollRight] = useState(true)
-
-  // Position arrows to center on product image
-  // Product cards have square images at the top, so we use ~30% from top to center on image
-  const arrowTopPosition = '30%'
-
-  // Check scroll position and update arrow visibility
-  const checkScrollability = () => {
-    if (!scrollContainerRef.current) return
-    
-    const container = scrollContainerRef.current
-    const { scrollLeft, scrollWidth, clientWidth } = container
-    
-    // Use a more precise threshold (1px) to avoid jump
-    const threshold = 1
-    
-    // Can scroll left if not at the start
-    setCanScrollLeft(scrollLeft > threshold)
-    
-    // Can scroll right if not at the end (with precise threshold)
-    setCanScrollRight(scrollLeft < scrollWidth - clientWidth - threshold)
-  }
-
-  // Check scrollability on mount and when products change
-  useEffect(() => {
-    checkScrollability()
-    
-    const container = scrollContainerRef.current
-    if (container) {
-      container.addEventListener('scroll', checkScrollability)
-      // Also check on resize
-      window.addEventListener('resize', checkScrollability)
-      
-      return () => {
-        container.removeEventListener('scroll', checkScrollability)
-        window.removeEventListener('resize', checkScrollability)
-      }
-    }
-  }, [products])
-
-  const scroll = (direction: 'left' | 'right') => {
-    if (!scrollContainerRef.current) return
-    
-    const container = scrollContainerRef.current
-    const { scrollLeft, scrollWidth, clientWidth } = container
-    
-    // Calculate scroll amount based on viewport: ~2 cards on mobile, ~3 on tablet, ~4 on desktop
-    const containerWidth = container.clientWidth
-    const scrollAmount = containerWidth * 0.8 // Scroll ~80% of visible width
-    
-    let targetScroll = scrollLeft + (direction === 'left' ? -scrollAmount : scrollAmount)
-    
-    // Clamp to valid scroll range to prevent overshooting
-    const maxScroll = scrollWidth - clientWidth
-    targetScroll = Math.max(0, Math.min(targetScroll, maxScroll))
-    
-    container.scrollTo({
-      left: targetScroll,
-      behavior: 'smooth',
-    })
-  }
-
-  // Drag to scroll handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (!scrollContainerRef.current) return
-    // Don't start dragging if clicking on a link or button
-    const target = e.target as HTMLElement
-    if (target.closest('a') || target.closest('button')) return
-    
-    setIsDragging(true)
-    setStartX(e.pageX - scrollContainerRef.current.offsetLeft)
-    setScrollLeft(scrollContainerRef.current.scrollLeft)
-    scrollContainerRef.current.style.cursor = 'grabbing'
-    scrollContainerRef.current.style.userSelect = 'none'
-  }
-
-  const handleMouseLeave = () => {
-    if (!scrollContainerRef.current) return
-    setIsDragging(false)
-    scrollContainerRef.current.style.cursor = 'grab'
-    scrollContainerRef.current.style.userSelect = 'auto'
-  }
-
-  const handleMouseUp = () => {
-    if (!scrollContainerRef.current) return
-    setIsDragging(false)
-    scrollContainerRef.current.style.cursor = 'grab'
-    scrollContainerRef.current.style.userSelect = 'auto'
-  }
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging || !scrollContainerRef.current) return
-    e.preventDefault()
-    const x = e.pageX - scrollContainerRef.current.offsetLeft
-    const walk = (x - startX) * 2 // Scroll speed multiplier
-    scrollContainerRef.current.scrollLeft = scrollLeft - walk
-  }
-
-  if (products.length === 0) return null
-
-  return (
-    <section id={id} className="py-8 md:py-12 scroll-mt-20">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl md:text-3xl font-normal text-brand-black tracking-tight">
-          {title}
-        </h2>
-        <a
-          href={shopAllLink}
-          className="text-sm font-medium text-brand-blue-500 hover:text-brand-blue-600 transition-colors"
-        >
-          Shop all →
-        </a>
-      </div>
-      
-      <div className="relative">
-        {/* Left Arrow - Hidden on mobile, visible on desktop with smooth transition */}
-        <button
-          onClick={() => scroll('left')}
-          className={`hidden md:flex absolute z-10 bg-white border border-brand-gray-300 rounded-lg p-2 shadow-md hover:bg-brand-gray-50 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-brand-blue-500 ${
-            canScrollLeft 
-              ? 'opacity-100 pointer-events-auto' 
-              : 'opacity-0 pointer-events-none'
-          }`}
-          style={{ 
-            left: '-12px',
-            top: arrowTopPosition, 
-            transform: `translateY(-50%) ${canScrollLeft ? 'translateX(0)' : 'translateX(-8px)'}` 
-          }}
-          aria-label={`Scroll ${title} left`}
-          disabled={!canScrollLeft}
-        >
-          <svg className="w-5 h-5 text-brand-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-
-        {/* Scrollable Container */}
-        <div
-          ref={scrollContainerRef}
-          className="flex gap-4 md:gap-6 overflow-x-auto scrollbar-hide scroll-smooth cursor-grab active:cursor-grabbing"
-          style={{
-            scrollbarWidth: 'none',
-            msOverflowStyle: 'none',
-            WebkitOverflowScrolling: 'touch',
-          }}
-          onMouseDown={handleMouseDown}
-          onMouseLeave={handleMouseLeave}
-          onMouseUp={handleMouseUp}
-          onMouseMove={handleMouseMove}
-          onScroll={checkScrollability}
-        >
-          {products.map((product) => (
-            <div
-              key={product.id}
-              className="flex-shrink-0 w-[180px] sm:w-[200px] md:w-[220px] lg:w-[240px]"
-            >
-              <ProductCard
-                product={product}
-                onUnifiedAction={onUnifiedAction}
-                onAddToWishlist={onAddToWishlist}
-                isInWishlist={wishlistIds.includes(product.id)}
-                allProducts={allProducts}
-              />
-            </div>
-          ))}
-        </div>
-
-        {/* Right Arrow - Hidden on mobile, visible on desktop with smooth transition */}
-        <button
-          onClick={() => scroll('right')}
-          className={`hidden md:flex absolute z-10 bg-white border border-brand-gray-300 rounded-lg p-2 shadow-md hover:bg-brand-gray-50 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-brand-blue-500 ${
-            canScrollRight 
-              ? 'opacity-100 pointer-events-auto' 
-              : 'opacity-0 pointer-events-none'
-          }`}
-          style={{ 
-            right: '-12px',
-            top: arrowTopPosition, 
-            transform: `translateY(-50%) ${canScrollRight ? 'translateX(0)' : 'translateX(8px)'}` 
-          }}
-          aria-label={`Scroll ${title} right`}
-          disabled={!canScrollRight}
-        >
-          <svg className="w-5 h-5 text-brand-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
-      </div>
-    </section>
-  )
-}
 
 export default function NewReleasesPage() {
   const [wishlistIds, setWishlistIds] = useState<string[]>([])
@@ -426,13 +208,13 @@ export default function NewReleasesPage() {
             <div className="flex-1 min-w-0">
               {/* All New Releases Section */}
               {allNewReleases.length > 0 && (
-                <CarouselSection
+                <ProductCarousel
                   id="all"
                   title="All New Releases"
                   shopAllLink="/shop"
                   products={allNewReleases}
                   onUnifiedAction={handleUnifiedAction}
-onAddToWishlist={handleAddToWishlist}
+                  onAddToWishlist={handleAddToWishlist}
                   wishlistIds={wishlistIds}
                   allProducts={allProducts}
                 />
@@ -440,13 +222,13 @@ onAddToWishlist={handleAddToWishlist}
 
               {/* Just Dropped Section */}
               {justDropped.length > 0 && (
-                <CarouselSection
+                <ProductCarousel
                   id="just-dropped"
                   title="Just Dropped"
                   shopAllLink="/shop"
                   products={justDropped}
                   onUnifiedAction={handleUnifiedAction}
-onAddToWishlist={handleAddToWishlist}
+                  onAddToWishlist={handleAddToWishlist}
                   wishlistIds={wishlistIds}
                   allProducts={allProducts}
                 />
@@ -466,13 +248,13 @@ onAddToWishlist={handleAddToWishlist}
 
               {/* Trending New Section */}
               {trendingNew.length > 0 && (
-                <CarouselSection
+                <ProductCarousel
                   id="trending-new"
                   title="Trending New"
                   shopAllLink="/shop"
                   products={trendingNew}
                   onUnifiedAction={handleUnifiedAction}
-onAddToWishlist={handleAddToWishlist}
+                  onAddToWishlist={handleAddToWishlist}
                   wishlistIds={wishlistIds}
                   allProducts={allProducts}
                 />
@@ -480,13 +262,13 @@ onAddToWishlist={handleAddToWishlist}
 
               {/* New in Women Section */}
               {newInWomen.length > 0 && (
-                <CarouselSection
+                <ProductCarousel
                   id="new-in-women"
                   title="New in Women"
                   shopAllLink="/women"
                   products={newInWomen}
                   onUnifiedAction={handleUnifiedAction}
-onAddToWishlist={handleAddToWishlist}
+                  onAddToWishlist={handleAddToWishlist}
                   wishlistIds={wishlistIds}
                   allProducts={allProducts}
                 />
@@ -506,13 +288,13 @@ onAddToWishlist={handleAddToWishlist}
 
               {/* New in Men Section */}
               {newInMen.length > 0 && (
-                <CarouselSection
+                <ProductCarousel
                   id="new-in-men"
                   title="New in Men"
                   shopAllLink="/men"
                   products={newInMen}
                   onUnifiedAction={handleUnifiedAction}
-onAddToWishlist={handleAddToWishlist}
+                  onAddToWishlist={handleAddToWishlist}
                   wishlistIds={wishlistIds}
                   allProducts={allProducts}
                 />
@@ -520,13 +302,13 @@ onAddToWishlist={handleAddToWishlist}
 
               {/* New in Accessories Section */}
               {newInAccessories.length > 0 && (
-                <CarouselSection
+                <ProductCarousel
                   id="new-in-accessories"
                   title="New in Accessories"
                   shopAllLink="/accessories"
                   products={newInAccessories}
                   onUnifiedAction={handleUnifiedAction}
-onAddToWishlist={handleAddToWishlist}
+                  onAddToWishlist={handleAddToWishlist}
                   wishlistIds={wishlistIds}
                   allProducts={allProducts}
                 />

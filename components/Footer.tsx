@@ -10,6 +10,7 @@ export default function Footer() {
       'Sale',
     ],
     'Help': [
+      'FAQ',
       'Customer Service',
       'Size Guide',
       'Shipping & Returns',
@@ -25,7 +26,7 @@ export default function Footer() {
   }
 
   return (
-    <footer className="bg-white border-t border-brand-gray-200 mt-20">
+    <footer className="bg-white border-t border-brand-gray-200 mt-12 md:mt-16">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
         <div className="grid grid-cols-2 md:grid-cols-3 gap-8 md:gap-12">
           {Object.entries(footerLinks).map(([category, links]) => (
@@ -60,6 +61,8 @@ export default function Footer() {
                     href = '/sustainability'
                   } else if (link === 'Press') {
                     href = '/press'
+                  } else if (link === 'FAQ') {
+                    href = '/customer-service'
                   } else if (link === 'Customer Service') {
                     href = '/customer-service'
                   } else if (link === 'Size Guide') {

@@ -1,6 +1,8 @@
 'use client'
 
 import React, { useState, useMemo, useRef, useEffect } from 'react'
+import WriteReviewModal from './WriteReviewModal'
+import ReportReviewModal from './ReportReviewModal'
 
 interface Review {
   id: string
@@ -78,6 +80,10 @@ interface ReviewSectionProps {
   reviews: Review[]
   averageRating: number
   totalReviews: number
+  /** When true, opens the Write Review modal on mount (e.g. from ?review=true on PDP) */
+  openReviewOnMount?: boolean
+  /** Increment to trigger expand (e.g. when stars anchor is clicked on PDP) */
+  expandFromAnchor?: number
 }
 
 // Expandable Review Content Component
@@ -197,12 +203,15 @@ export default function ReviewSection({
   reviews: initialReviews,
   averageRating,
   totalReviews,
+  openReviewOnMount = false,
+  expandFromAnchor,
 }: ReviewSectionProps) {
   const [reviews, setReviews] = useState<Review[]>(initialReviews)
   const [sortBy, setSortBy] = useState<'newest' | 'highest' | 'lowest' | 'helpful'>('newest')
   const [filterRating, setFilterRating] = useState<number | null>(null)
   const [filterWithPhotos, setFilterWithPhotos] = useState(false)
-  const [showWriteReview, setShowWriteReview] = useState(false)
+  const [showWriteReview, setShowWriteReview] = useState(openReviewOnMount)
+  const [reportModalReview, setReportModalReview] = useState<Review | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const ITEMS_PER_PAGE = 5
   const [searchQuery, setSearchQuery] = useState('')
@@ -212,19 +221,17 @@ export default function ReviewSection({
   React.useEffect(() => {
     setReviews(initialReviews)
   }, [initialReviews])
-  
-  // New review form state
-  const [newReview, setNewReview] = useState({
-    rating: 0,
-    title: '',
-    content: '',
-    name: '',
-    email: '',
-    location: '',
-    recommend: true,
-  })
+
+  // Expand when triggered from PDP stars/anchor click
+  React.useEffect(() => {
+    if (expandFromAnchor != null && expandFromAnchor > 0) {
+      setIsExpanded(true)
+    }
+  }, [expandFromAnchor])
+
   const [submitSuccess, setSubmitSuccess] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
+  const [lastSubmittedReviewId, setLastSubmittedReviewId] = useState<string | null>(null)
   
   // Count reviews with photos
   const reviewsWithPhotosCount = useMemo(() => {
@@ -309,34 +316,39 @@ export default function ReviewSection({
     ))
   }
 
-  // Handle submit review
-  const handleSubmitReview = (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    if (newReview.rating === 0) {
-      alert('Please select a rating')
-      return
+  // Handle review submitted from WriteReviewModal
+  const handleReviewSuccess = (review: { id: string; author: string; rating: number; date: string; location?: string; title: string; content: string; verified: boolean; helpful: number }) => {
+    const mappedReview: Review = {
+      ...review,
+      id: review.id,
     }
-    
-    const review: Review = {
-      id: `new-${Date.now()}`,
-      author: newReview.name,
-      rating: newReview.rating,
-      date: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
-      location: newReview.location || undefined,
-      title: newReview.title,
-      content: newReview.content,
-      verified: false,
-      helpful: 0,
-    }
-    
-    setReviews(prev => [review, ...prev])
-    setNewReview({ rating: 0, title: '', content: '', name: '', email: '', location: '', recommend: true })
+    setReviews(prev => [mappedReview, ...prev])
     setShowWriteReview(false)
     setSubmitSuccess(true)
-    
+    setLastSubmittedReviewId(review.id)
+    setIsExpanded(true) // Expand section so user sees their new review
     setTimeout(() => setSubmitSuccess(false), 5000)
+    setTimeout(() => setLastSubmittedReviewId(null), 3000) // Clear highlight after animation
   }
+
+  // Scroll to newly submitted review and ensure reviews section is in view
+  useEffect(() => {
+    if (!lastSubmittedReviewId) return
+    
+    const scrollToNewReview = () => {
+      const el = document.getElementById(`review-${lastSubmittedReviewId}`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      } else {
+        // Fallback: scroll to reviews section
+        document.getElementById('reviews-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    }
+    
+    // Small delay to let React render the new review
+    const timer = setTimeout(scrollToNewReview, 150)
+    return () => clearTimeout(timer)
+  }, [lastSubmittedReviewId])
 
   return (
     <div className="mt-8 sm:mt-16 pt-8 sm:pt-16 border-t border-brand-gray-200">
@@ -395,16 +407,23 @@ export default function ReviewSection({
       {isExpanded && (
         <>
 
-      {/* Success Message */}
+      {/* Success Message - Visual confirmation that review was sent */}
       {submitSuccess && (
-        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-          <div className="flex items-start gap-3">
-            <div className="w-5 h-5 bg-green-600 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div 
+          className="mb-6 p-4 sm:p-5 bg-green-50 border-2 border-green-300 rounded-xl shadow-sm"
+          role="alert"
+          aria-live="polite"
+        >
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0 shadow-md">
+              <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <p className="text-sm text-brand-gray-700">Thank you! Your review has been submitted successfully.</p>
+            <div>
+              <p className="text-base sm:text-lg font-semibold text-green-800">Thank you for your review!</p>
+              <p className="text-sm text-green-700 mt-0.5">Your review has been submitted successfully. Scroll down to see it.</p>
+            </div>
           </div>
         </div>
       )}
@@ -594,7 +613,15 @@ export default function ReviewSection({
       <div className="space-y-4 sm:space-y-6">
         {visibleReviews.length > 0 ? (
           visibleReviews.map((review) => (
-            <div key={review.id} className="border-b border-brand-gray-200 pb-4 sm:pb-6 last:border-0">
+            <div
+              key={review.id}
+              id={`review-${review.id}`}
+              className={`border-b border-brand-gray-200 pb-4 sm:pb-6 last:border-0 transition-all duration-500 ${
+                review.id === lastSubmittedReviewId
+                  ? 'ring-2 ring-green-400 ring-offset-2 rounded-lg -m-1 p-1 mb-3 bg-green-50/50'
+                  : ''
+              }`}
+            >
               <div className="flex items-start gap-3 sm:gap-4">
                 {/* Avatar */}
                 <div className="w-10 h-10 sm:w-12 sm:h-12 bg-brand-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
@@ -664,7 +691,10 @@ export default function ReviewSection({
                       </svg>
                       Helpful ({review.helpful})
                     </button>
-                    <button className="text-xs sm:text-sm text-brand-gray-600 hover:text-brand-blue-500 transition-colors">
+                    <button
+                      onClick={() => setReportModalReview(review)}
+                      className="text-xs sm:text-sm text-brand-gray-600 hover:text-brand-blue-500 transition-colors"
+                    >
                       Report
                     </button>
                   </div>
@@ -775,8 +805,9 @@ export default function ReviewSection({
 
       {/* Image Lightbox Modal */}
       {lightboxImage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div data-modal-center className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div 
+            data-modal-overlay
             className="fixed inset-0 bg-black bg-opacity-90" 
             onClick={() => setLightboxImage(null)} 
           />
@@ -799,202 +830,22 @@ export default function ReviewSection({
         </div>
       )}
 
-      {/* Write Review Modal */}
-      {showWriteReview && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowWriteReview(false)} />
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-              {/* Header */}
-              <div className="sticky top-0 bg-white border-b border-brand-gray-200 px-6 py-4 flex items-center justify-between">
-                <h3 className="text-lg font-medium text-brand-black">Write a Review</h3>
-                <button
-                  onClick={() => setShowWriteReview(false)}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+      {/* Write Review Modal - Reused across PDP, My Account, Order Details */}
+      <WriteReviewModal
+        productId={productId}
+        productName={productName}
+        isOpen={showWriteReview}
+        onClose={() => setShowWriteReview(false)}
+        onSuccess={handleReviewSuccess}
+      />
 
-              {/* Form */}
-              <form onSubmit={handleSubmitReview} className="p-6 space-y-6">
-                {/* Rating */}
-                <div>
-                  <label className="block text-sm font-medium text-brand-black mb-2">
-                    Overall Rating <span className="text-red-500">*</span>
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <StarRating 
-                      rating={newReview.rating} 
-                      size="lg" 
-                      interactive 
-                      onRatingChange={(rating) => setNewReview(prev => ({ ...prev, rating }))}
-                    />
-                    <span className="text-sm text-brand-gray-600">
-                      {newReview.rating > 0 ? `${newReview.rating} out of 5 stars` : 'Select a rating'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Title */}
-                <div>
-                  <label className="block text-sm font-medium text-brand-black mb-2">
-                    Review Title
-                  </label>
-                  <input
-                    type="text"
-                    value={newReview.title}
-                    onChange={(e) => setNewReview(prev => ({ ...prev, title: e.target.value }))}
-                    placeholder="Summarize your experience"
-                    className="w-full px-4 py-2 border border-brand-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue-500 text-sm"
-                  />
-                </div>
-
-                {/* Content */}
-                <div>
-                  <label className="block text-sm font-medium text-brand-black mb-2">
-                    Your Review <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    value={newReview.content}
-                    onChange={(e) => {
-                      const value = e.target.value
-                      if (value.length <= 2000) {
-                        setNewReview(prev => ({ ...prev, content: value }))
-                      }
-                    }}
-                    placeholder="What did you like or dislike about this product?"
-                    rows={4}
-                    required
-                    maxLength={2000}
-                    aria-describedby="review-content-description"
-                    className="w-full px-4 py-2 border border-brand-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue-500 text-sm resize-none"
-                  />
-                  <div className="flex justify-between items-center mt-1">
-                    <p id="review-content-description" className="text-xs text-brand-gray-500">Minimum 50 characters</p>
-                    <p className={`text-xs ${newReview.content.length >= 2000 ? 'text-red-500' : 'text-brand-gray-500'}`}>
-                      {newReview.content.length}/2000
-                    </p>
-                  </div>
-                </div>
-
-                {/* Recommend */}
-                <div>
-                  <label className="block text-sm font-medium text-brand-black mb-2">
-                    Would you recommend this product?
-                  </label>
-                  <div className="flex gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="recommend"
-                        checked={newReview.recommend === true}
-                        onChange={() => setNewReview(prev => ({ ...prev, recommend: true }))}
-                        className="w-4 h-4 text-brand-blue-500"
-                      />
-                      <span className="text-sm text-brand-black">Yes</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="recommend"
-                        checked={newReview.recommend === false}
-                        onChange={() => setNewReview(prev => ({ ...prev, recommend: false }))}
-                        className="w-4 h-4 text-brand-blue-500"
-                      />
-                      <span className="text-sm text-brand-black">No</span>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Name */}
-                <div>
-                  <label className="block text-sm font-medium text-brand-black mb-2">
-                    Your Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={newReview.name}
-                    onChange={(e) => setNewReview(prev => ({ ...prev, name: e.target.value }))}
-                    placeholder="Enter your name"
-                    required
-                    className="w-full px-4 py-2 border border-brand-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue-500 text-sm"
-                  />
-                </div>
-
-                {/* Email */}
-                <div>
-                  <label className="block text-sm font-medium text-brand-black mb-2">
-                    Email Address <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    value={newReview.email}
-                    onChange={(e) => setNewReview(prev => ({ ...prev, email: e.target.value }))}
-                    placeholder="your@email.com"
-                    required
-                    className="w-full px-4 py-2 border border-brand-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue-500 text-sm"
-                  />
-                  <p className="text-xs text-brand-gray-500 mt-1">Your email will not be published</p>
-                </div>
-
-                {/* Location */}
-                <div>
-                  <label className="block text-sm font-medium text-brand-black mb-2">
-                    Location
-                  </label>
-                  <input
-                    type="text"
-                    value={newReview.location}
-                    onChange={(e) => setNewReview(prev => ({ ...prev, location: e.target.value }))}
-                    placeholder="City, State or Country (e.g., Los Angeles, CA)"
-                    className="w-full px-4 py-2 border border-brand-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue-500 text-sm"
-                  />
-                  <p className="text-xs text-brand-gray-500 mt-1">Optional - helps other customers</p>
-                </div>
-
-                {/* Photo Upload Placeholder */}
-                <div>
-                  <label className="block text-sm font-medium text-brand-black mb-2">
-                    Add Photos (Optional)
-                  </label>
-                  <div className="border-2 border-dashed border-brand-gray-300 rounded-lg p-6 text-center hover:border-brand-blue-500 transition-colors cursor-pointer">
-                    <svg className="w-8 h-8 text-brand-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <p className="text-sm text-brand-gray-600">Click to upload or drag and drop</p>
-                    <p className="text-xs text-brand-gray-500 mt-1">PNG, JPG up to 5MB</p>
-                  </div>
-                </div>
-
-                {/* Terms */}
-                <p className="text-xs text-brand-gray-500">
-                  By submitting this review, you agree to our Terms of Service and Privacy Policy.
-                </p>
-
-                {/* Submit */}
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowWriteReview(false)}
-                    className="flex-1 py-3 border border-brand-gray-300 text-brand-black font-medium rounded-lg hover:bg-brand-gray-50 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-3 bg-brand-blue-500 text-white font-medium rounded-lg hover:bg-brand-blue-600 transition-colors"
-                  >
-                    Submit Review
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Report Review Modal */}
+      <ReportReviewModal
+        isOpen={!!reportModalReview}
+        onClose={() => setReportModalReview(null)}
+        review={reportModalReview ? { id: reportModalReview.id, author: reportModalReview.author, rating: reportModalReview.rating, title: reportModalReview.title, content: reportModalReview.content } : null}
+        productName={productName}
+      />
         </>
       )}
     </div>

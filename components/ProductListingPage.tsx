@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef, useLayoutEffect } from 'react'
 import Link from 'next/link'
 import ProductCard from './ProductCard'
+import { useAgent } from '../context/AgentContext'
 import QuickViewModal from './QuickViewModal'
 import LazyImage from './LazyImage'
 import StoreLocatorModal from './StoreLocatorModal'
@@ -39,6 +40,9 @@ export interface Product {
   discountPercentage?: number // Product-level discount percentage
   percentOff?: number // Percent-off badge value
   promotionalMessage?: string // Promotional message (e.g., "Extra 25% Off with code EXTRA25")
+  keyBenefits?: string[]
+  technicalSpecs?: Record<string, string>
+  description?: string
 }
 
 interface FilterState {
@@ -125,6 +129,8 @@ export default function ProductListingPage({
   const [visibleSubcategoriesCount, setVisibleSubcategoriesCount] = useState<number | null>(null)
   const subcategoriesContainerRef = useRef<HTMLDivElement>(null)
   const subcategoryButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
+
+  const { agentFilters, setAgentFilters } = useAgent()
 
   // Safety check for products
   const safeProducts = products || []
@@ -291,16 +297,31 @@ export default function ProductListingPage({
     return [Math.min(...prices), Math.max(...prices)] as [number, number]
   }, [safeProducts])
 
-  // Initialize filters with price range
+  // Sync agent filters into product listing filters
   useEffect(() => {
-    if (priceRange[0] !== filters.priceRange[0] || priceRange[1] !== filters.priceRange[1]) {
-      setFilters((prev) => ({
-        ...prev,
-        priceRange: [priceRange[0], priceRange[1]] as [number, number],
-      }))
-    }
+    setFilters((prev) => {
+      let next = { ...prev }
+      if (agentFilters) {
+        if (agentFilters.maxPrice != null) {
+          next.priceRange = [prev.priceRange[0], Math.min(prev.priceRange[1], agentFilters.maxPrice)]
+        } else {
+          next.priceRange = [priceRange[0], priceRange[1]]
+        }
+        if (agentFilters.colors?.length) {
+          next.colors = [...new Set([...prev.colors, ...agentFilters.colors])]
+        }
+        if (agentFilters.sizes?.length) {
+          next.sizes = [...new Set([...prev.sizes, ...agentFilters.sizes])]
+        }
+      } else {
+        next.priceRange = [priceRange[0], priceRange[1]]
+        next.colors = []
+        next.sizes = []
+      }
+      return next
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [priceRange])
+  }, [priceRange, agentFilters])
 
   // Toggle filter sidebar visibility
   const handleToggleFilters = () => {
@@ -367,6 +388,17 @@ export default function ProductListingPage({
         if (!product.subcategory || !filters.subcategories.includes(product.subcategory)) return false
       }
 
+      // Matte finish filter (from agent pills)
+      if (agentFilters?.matteFinish) {
+        const text = [
+          ...(product.keyBenefits ?? []),
+          product.shortDescription ?? '',
+          product.description ?? '',
+          ...Object.values(product.technicalSpecs ?? {}),
+        ].join(' ').toLowerCase()
+        if (!text.includes('matte')) return false
+      }
+
       return true
     })
 
@@ -391,7 +423,7 @@ export default function ProductListingPage({
     })
 
     return filtered
-  }, [safeProducts, filters, sortBy])
+  }, [safeProducts, filters, sortBy, agentFilters?.matteFinish])
 
   // Pagination logic
   const totalPages = Math.ceil(filteredAndSortedProducts.length / itemsPerPage)
@@ -533,6 +565,7 @@ export default function ProductListingPage({
   }
 
   const clearFilters = () => {
+    setAgentFilters(null)
     setFilters({
       priceRange: [priceRange[0], priceRange[1]] as [number, number],
       sizes: [],
@@ -555,10 +588,11 @@ export default function ProductListingPage({
     if (filters.categories.length > 0) count += filters.categories.length
     if (filters.subcategories.length > 0) count += filters.subcategories.length
     if (filters.inStockOnly) count += 1
+    if (agentFilters?.matteFinish) count += 1
     // Price range is considered active if it's not the full range
     if (filters.priceRange[0] !== priceRange[0] || filters.priceRange[1] !== priceRange[1]) count += 1
     return count
-  }, [filters, priceRange])
+  }, [filters, priceRange, agentFilters?.matteFinish])
 
   // Get active filters as chips data
   const activeFilterChips = useMemo(() => {
@@ -573,6 +607,7 @@ export default function ProductListingPage({
         id: 'price-range',
         label: `$${Math.round(filters.priceRange[0])} - $${Math.round(filters.priceRange[1])}`,
         onRemove: () => {
+          setAgentFilters((prev) => prev ? { ...prev, maxPrice: undefined } : null)
           setFilters((prev) => ({
             ...prev,
             priceRange: [priceRange[0], priceRange[1]] as [number, number],
@@ -586,7 +621,10 @@ export default function ProductListingPage({
       chips.push({
         id: `size-${size}`,
         label: size === 'S' ? 'Small' : size === 'M' ? 'Medium' : size === 'L' ? 'Large' : size === 'XL' ? 'Extra Large' : size,
-        onRemove: () => handleSizeToggle(size),
+        onRemove: () => {
+          setAgentFilters((prev) => prev ? { ...prev, sizes: prev.sizes?.filter((s) => s !== size) ?? [] } : null)
+          handleSizeToggle(size)
+        },
       })
     })
 
@@ -595,9 +633,23 @@ export default function ProductListingPage({
       chips.push({
         id: `color-${color}`,
         label: color.charAt(0).toUpperCase() + color.slice(1),
-        onRemove: () => handleColorToggle(color),
+        onRemove: () => {
+          setAgentFilters((prev) => prev ? { ...prev, colors: prev.colors?.filter((c) => c !== color) ?? [] } : null)
+          handleColorToggle(color)
+        },
       })
     })
+
+    // Matte finish filter (from agent pill)
+    if (agentFilters?.matteFinish) {
+      chips.push({
+        id: 'matte-finish',
+        label: 'Matte finish',
+        onRemove: () => {
+          setAgentFilters((prev) => prev ? { ...prev, matteFinish: false } : null)
+        },
+      })
+    }
 
     // Category filters
     filters.categories.forEach((category) => {

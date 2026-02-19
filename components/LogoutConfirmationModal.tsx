@@ -30,12 +30,13 @@ export default function LogoutConfirmationModal({
     <div className="fixed inset-0 z-50 overflow-y-auto">
       {/* Backdrop */}
       <div 
+        data-modal-overlay
         className="fixed inset-0 backdrop-default transition-opacity"
         onClick={onClose}
       />
 
       {/* Modal */}
-      <div className="flex min-h-full items-center justify-center p-4">
+      <div data-modal-center className="flex min-h-full items-center justify-center p-4">
         <div 
           className="relative bg-card rounded-modal shadow-modal max-w-md w-full"
           style={{ animation: 'scale-in 0.2s ease-out forwards' }}
@@ -43,7 +44,7 @@ export default function LogoutConfirmationModal({
         >
           {/* Content */}
           <div className="p-6">
-            <h2 className="text-xl font-semibold text-brand-black mb-2">
+            <h2 className="text-lg font-semibold text-brand-black mb-2">
               Sign Out
             </h2>
             <p className="text-sm text-brand-gray-600 mb-6">

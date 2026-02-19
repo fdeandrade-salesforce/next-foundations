@@ -220,8 +220,16 @@ export default function Hero({
               />
             )}
             
-            {/* Gradient Overlay */}
-            <div className="absolute inset-0 bg-gradient-to-r from-foreground/60 via-foreground/30 to-transparent" />
+            {/* Gradient Overlays - token-based (inline styles needed for opacity with CSS vars) */}
+            <div 
+              className="absolute inset-0" 
+              style={{
+                background: `
+                  linear-gradient(to top, color-mix(in oklch, var(--brand-black) 30%, transparent) 0%, transparent 100%),
+                  linear-gradient(to right, color-mix(in oklch, var(--brand-black) 60%, transparent) 0%, color-mix(in oklch, var(--brand-black) 30%, transparent) 50%, transparent 100%)
+                `,
+              }} 
+            />
           </div>
           )
         })}

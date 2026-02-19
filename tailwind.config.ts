@@ -166,6 +166,39 @@ const config: Config = {
         },
 
         // ============================================================================
+        // AGENTIC EXPERIENCE COLORS
+        // ============================================================================
+        agentic: {
+          DEFAULT: 'var(--agentic)',
+          foreground: 'var(--agentic-foreground)',
+          primary: 'var(--agentic-primary)',
+          'primary-foreground': 'var(--agentic-primary-foreground)',
+          accent: 'var(--agentic-accent)',
+          'accent-foreground': 'var(--agentic-accent-foreground)',
+          border: 'var(--agentic-border)',
+          ring: 'var(--agentic-ring)',
+          muted: 'var(--agentic-muted)',
+          'muted-foreground': 'var(--agentic-muted-foreground)',
+          input: 'var(--agentic-input)',
+        },
+
+        // ============================================================================
+        // HEADER COLORS
+        // ============================================================================
+        header: {
+          DEFAULT: 'var(--header)',
+          foreground: 'var(--header-foreground)',
+          primary: 'var(--header-primary)',
+          'primary-foreground': 'var(--header-primary-foreground)',
+          accent: 'var(--header-accent)',
+          'accent-foreground': 'var(--header-accent-foreground)',
+          muted: 'var(--header-muted)',
+          'muted-foreground': 'var(--header-muted-foreground)',
+          border: 'var(--header-border)',
+          ring: 'var(--header-ring)',
+        },
+
+        // ============================================================================
         // LEGACY ZARA COLORS - For backward compatibility (deprecated)
         // ============================================================================
         zara: {

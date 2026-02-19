@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
+import ModalHeader from './ModalHeader'
 
 interface Question {
   id: string
@@ -763,28 +764,19 @@ export default function QASection({
       {/* Ask Question Modal */}
       {showAskQuestion && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowAskQuestion(false)} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowAskQuestion(false)} />
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div
               className="relative bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="sticky top-0 bg-white border-b border-brand-gray-200 px-6 py-4 flex items-center justify-between">
-                <h3 className="text-lg font-medium text-brand-black">Ask a Question</h3>
-                <button
-                  onClick={() => setShowAskQuestion(false)}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
+              <div className="sticky top-0 bg-white z-10">
+                <ModalHeader
+                  title="Ask a Question"
+                  onClose={() => setShowAskQuestion(false)}
+                  closeAriaLabel="Close"
+                />
               </div>
 
               {/* Form */}
@@ -846,30 +838,22 @@ export default function QASection({
       {showAnswerModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div
+            data-modal-overlay
             className="fixed inset-0 bg-black bg-opacity-50"
             onClick={() => setShowAnswerModal(null)}
           />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div
               className="relative bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="sticky top-0 bg-white border-b border-brand-gray-200 px-6 py-4 flex items-center justify-between">
-                <h3 className="text-lg font-medium text-brand-black">My Answer</h3>
-                <button
-                  onClick={() => setShowAnswerModal(null)}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
+              <div className="sticky top-0 bg-white z-10">
+                <ModalHeader
+                  title="My Answer"
+                  onClose={() => setShowAnswerModal(null)}
+                  closeAriaLabel="Close"
+                />
               </div>
 
               {/* Question Info */}

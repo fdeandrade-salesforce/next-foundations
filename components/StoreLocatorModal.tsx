@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import ModalHeader from './ModalHeader'
 import { getStoreRepo } from '../src/data'
 
 // Store data is now loaded from repository
@@ -86,17 +87,6 @@ export default function StoreLocatorModal({
 
   if (!isOpen) return null
 
-  const getStatusColor = (status: Store['status']) => {
-    switch (status) {
-      case 'open':
-        return 'text-success'
-      case 'closing-soon':
-        return 'text-warning'
-      case 'closed':
-        return 'text-muted-foreground'
-    }
-  }
-
   const handleSelectStore = (store: Store) => {
     setSelectedStore(store.id)
     onSelectStore(store)
@@ -121,22 +111,13 @@ export default function StoreLocatorModal({
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
       {/* Backdrop */}
-      <div className="fixed inset-0 backdrop-light transition-opacity" onClick={onClose} />
+      <div data-modal-overlay className="fixed inset-0 backdrop-light transition-opacity" onClick={onClose} />
 
       {/* Modal Panel - Slides in from right */}
-      <div className="fixed inset-y-0 right-0 max-w-lg w-full bg-card shadow-modal overflow-hidden flex flex-col animate-slide-in-right">
+      <div data-modal-panel className="fixed inset-y-0 right-0 max-w-lg w-full bg-card shadow-modal overflow-hidden flex flex-col animate-slide-in-right">
         {/* Header */}
-        <div className="flex items-start justify-between pt-6 px-6 pb-0">
-          <h2 className="text-lg font-semibold text-brand-black tracking-tight">Find a Store</h2>
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-1 text-brand-gray-500 hover:text-brand-black transition-colors opacity-70 hover:opacity-100"
-            aria-label="Close"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+        <div className="flex-shrink-0">
+          <ModalHeader title="Find a Store" onClose={onClose} closeAriaLabel="Close" />
         </div>
 
         {/* Content */}
@@ -231,15 +212,7 @@ export default function StoreLocatorModal({
                             {store.distance.toFixed(1)} miles away
                           </span>
 
-                          {/* Hours Status */}
-                          <span className={`flex items-center gap-2 font-medium ${getStatusColor(store.status)}`}>
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            {store.hours}
-                          </span>
-
-                          {/* Store Hours Link */}
+                          {/* Store Hours Link - no "Open today" inference; hours shown in collapsible */}
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
@@ -258,19 +231,10 @@ export default function StoreLocatorModal({
                           </p>
                         )}
 
-                        {/* Store Hours Dropdown */}
-                        {showStoreHours === store.id && (
-                          <div className="mt-3 p-3 bg-brand-gray-50 rounded-lg text-xs text-brand-gray-600">
-                            <p className="font-medium text-brand-black mb-2">Store Hours</p>
-                            <div className="space-y-1">
-                              <div className="flex justify-between"><span>Monday</span><span>9 AM - 9 PM</span></div>
-                              <div className="flex justify-between"><span>Tuesday</span><span>9 AM - 9 PM</span></div>
-                              <div className="flex justify-between"><span>Wednesday</span><span>9 AM - 9 PM</span></div>
-                              <div className="flex justify-between"><span>Thursday</span><span>9 AM - 9 PM</span></div>
-                              <div className="flex justify-between"><span>Friday</span><span>9 AM - 10 PM</span></div>
-                              <div className="flex justify-between"><span>Saturday</span><span>10 AM - 10 PM</span></div>
-                              <div className="flex justify-between"><span>Sunday</span><span>11 AM - 7 PM</span></div>
-                            </div>
+                        {/* Store Hours Dropdown - renders unstructured API text safely, no parsing */}
+                        {showStoreHours === store.id && store.hours && (
+                          <div className="mt-3 p-3 bg-brand-gray-50 rounded-lg text-xs text-brand-gray-600 whitespace-pre-wrap">
+                            {store.hours.replace(/<[^>]*>/g, '').trim() || store.hours}
                           </div>
                         )}
                       </div>

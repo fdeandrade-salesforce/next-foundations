@@ -169,6 +169,31 @@
     --ease-out: cubic-bezier(0, 0, 0.2, 1);
     --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
 
+    /* -- Agentic Experience Tokens (Sidebar/Chart pattern) -- */
+    --agentic: oklch(0.98 0 0);
+    --agentic-foreground: oklch(0.13 0 0);
+    --agentic-primary: oklch(0.59 0.2 264);
+    --agentic-primary-foreground: oklch(1 0 0);
+    --agentic-accent: oklch(0.96 0.01 264);
+    --agentic-accent-foreground: oklch(0.13 0 0);
+    --agentic-border: oklch(0.91 0 0);
+    --agentic-ring: oklch(0.59 0.2 264);
+    --agentic-muted: oklch(0.96 0 0);
+    --agentic-muted-foreground: oklch(0.45 0 0);
+    --agentic-input: oklch(0.96 0 0);
+
+    /* -- Header Tokens -- */
+    --header: oklch(1 0 0);
+    --header-foreground: oklch(0.13 0 0);
+    --header-primary: oklch(0.59 0.2 264);
+    --header-primary-foreground: oklch(1 0 0);
+    --header-accent: oklch(0.96 0 0);
+    --header-accent-foreground: oklch(0.13 0 0);
+    --header-muted: oklch(0.96 0 0);
+    --header-muted-foreground: oklch(0.46 0 0);
+    --header-border: oklch(0.91 0 0);
+    --header-ring: oklch(0.59 0.2 264);
+
     /* -- Component Spacing Tokens -- */
     --spacing-modal-padding: 1rem;
     --spacing-card-padding: 1rem;
@@ -192,6 +217,21 @@
       --spacing-modal-padding: 2rem;
       --spacing-section-gap: 4rem;
     }
+  }
+
+  /* Dark mode overrides */
+  .dark {
+    /* -- Header Tokens (dark mode) -- */
+    --header: oklch(0.14 0 0);
+    --header-foreground: oklch(0.98 0 0);
+    --header-primary: oklch(0.98 0 0);
+    --header-primary-foreground: oklch(0 0 0);
+    --header-accent: oklch(0.20 0 0);
+    --header-accent-foreground: oklch(0.98 0 0);
+    --header-muted: oklch(0.20 0 0);
+    --header-muted-foreground: oklch(0.62 0 0);
+    --header-border: oklch(1 0 0 / 10%);
+    --header-ring: oklch(0.62 0 0);
   }
 
   * {
@@ -390,6 +430,20 @@
     padding: var(--spacing-modal-padding);
   }
 
+  /* Modal header pattern: title + close. Use modal-header__title and modal-header__close for custom layouts. */
+  .modal-header {
+    @apply flex items-center justify-between border-b border-brand-gray-200 shrink-0 px-4 sm:px-6 py-4;
+  }
+  .modal-header__title {
+    @apply text-lg font-semibold text-brand-black truncate pr-2;
+  }
+  .modal-header__close {
+    @apply p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors;
+  }
+  .modal-header__close svg {
+    @apply w-5 h-5;
+  }
+
   /* ============================================================================
      FORM COMPONENTS
      ============================================================================ */
@@ -536,8 +590,31 @@ html {
   }
 }
 
+@keyframes slideUpFromBottom {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up-from-bottom {
+  animation: slideUpFromBottom 0.3s ease-out;
+}
+
 .animate-slide-in-right {
   animation: slideInRight 0.3s ease-out;
+}
+
+/* Agent sidebar: bottom slide on mobile, right slide on desktop */
+.agent-sidebar-animation {
+  animation: slideUpFromBottom 0.3s ease-out;
+}
+@media (min-width: 1024px) {
+  .agent-sidebar-animation {
+    animation: slideInRight 0.3s ease-out;
+  }
 }
 
 @keyframes menuSlideDown {
@@ -625,4 +702,26 @@ html {
 
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+/* ============================================================================
+   AGENT SIDEBAR - Modal constraint when agent is open on desktop
+   Constrain modal overlays and panels to main content area (left of 420px sidebar)
+   ============================================================================ */
+@media (min-width: 1024px) {
+  html.agent-modal-constrain [data-modal-overlay] {
+    right: 420px;
+  }
+  /* Centering wrappers need position:fixed for right constraint to take effect (they lack position by default) */
+  html.agent-modal-constrain [data-modal-center] {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    right: 420px;
+    overflow-y: auto;
+  }
+  html.agent-modal-constrain [data-modal-panel] {
+    right: 420px;
+  }
 }

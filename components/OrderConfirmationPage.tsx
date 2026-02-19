@@ -319,7 +319,7 @@ function SocialShare() {
 
 export default function OrderConfirmationPage({ orderNumber }: OrderConfirmationProps) {
   const searchParams = useSearchParams()
-  const isSuccess = searchParams.get('success') === 'true'
+  const isSuccess = searchParams?.get('success') === 'true'
   
   const [orderData, setOrderData] = useState<OrderConfirmationData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -488,20 +488,25 @@ export default function OrderConfirmationPage({ orderNumber }: OrderConfirmation
                 {/* BOPIS Shipment Groups */}
                 {stores.map((store, storeIdx) => (
                   <div key={storeIdx} className="border border-brand-gray-200 rounded-lg overflow-hidden">
-                    {/* Group Header */}
-                    <div className="bg-brand-gray-50 px-4 py-3 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                        <span className="font-medium text-brand-black truncate">
-                          Pickup at {store.name}
-                        </span>
+                    <div className="flex items-start gap-4 p-4 hover:bg-brand-gray-50 transition-colors">
+                      <div className="flex-shrink-0">
+                        <div className="w-20 h-20 bg-brand-gray-100 rounded-lg overflow-hidden">
+                          <img
+                            src={store.items[0]?.image || '/images/products/placeholder.png'}
+                            alt={'Pickup at ' + store.name}
+                            className="w-full h-full object-cover"
+                            onError={(e: React.SyntheticEvent<HTMLImageElement>) => { e.currentTarget.src = '/images/products/placeholder.png' }}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-brand-black mb-1">Pickup at {store.name}</p>
                       </div>
                       <span className="text-xs font-semibold px-2 py-1 rounded bg-blue-100 text-blue-700 whitespace-nowrap flex-shrink-0">
                         Ready for Pickup
                       </span>
                     </div>
-                    
-                    {/* Items */}
-                    <div className="p-4">
+                    <div className="pl-5 pr-4 pb-4">
                       <div className="space-y-3 mb-4">
                         {store.items.map((item, idx) => (
                           <div key={idx} className="flex items-start gap-4 p-4 border border-brand-gray-200 rounded-lg hover:bg-brand-gray-50 transition-colors">
@@ -539,8 +544,6 @@ export default function OrderConfirmationPage({ orderNumber }: OrderConfirmation
                           </div>
                         ))}
                       </div>
-                      
-                      {/* Pickup Information */}
                       <div className="border-t border-brand-gray-200 pt-3 mt-3">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div className="bg-brand-blue-50 border border-brand-blue-200 rounded-lg p-3">
@@ -575,29 +578,31 @@ export default function OrderConfirmationPage({ orderNumber }: OrderConfirmation
                 {/* Delivery Shipment Groups - Multi-shipping or single */}
                 {orderData.hasDelivery && (
                   <>
-                    {orderData.isMultiship && orderData.shipments && orderData.shipments.length > 0 ? (
-                      // Multi-shipping: Show each shipment separately
+                    {orderData.isMultiship && orderData.shipments && (orderData.shipments.length > 0) ? (
                       orderData.shipments.map((shipment, shipmentIdx) => (
                         <div key={shipment.addressId} className="border border-brand-gray-200 rounded-lg overflow-hidden">
-                          {/* Group Header */}
-                          <div className="bg-brand-gray-50 px-4 py-3 flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                              <span className="font-medium text-brand-black whitespace-nowrap">
-                                Shipment {shipmentIdx + 1}
-                              </span>
+                          <div className="flex items-start gap-4 p-4 hover:bg-brand-gray-50 transition-colors">
+                            <div className="flex-shrink-0">
+                              <div className="w-20 h-20 bg-brand-gray-100 rounded-lg overflow-hidden">
+                                <img
+                                  src={shipment.items?.[0]?.image || '/images/products/placeholder.png'}
+                                  alt={'Shipment ' + (shipmentIdx + 1)}
+                                  className="w-full h-full object-cover"
+                                  onError={(e: React.SyntheticEvent<HTMLImageElement>) => { e.currentTarget.src = '/images/products/placeholder.png' }}
+                                />
+                              </div>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-brand-black mb-1">Shipment {shipmentIdx + 1}</p>
                               {shipment.address && (
-                                <span className="text-sm text-brand-gray-600 truncate hidden sm:inline">
-                                  → {shipment.address.name}
-                                </span>
+                                <p className="text-xs text-brand-gray-500 truncate">{shipment.address.name}</p>
                               )}
                             </div>
                             <span className="text-xs font-semibold px-2 py-1 rounded bg-gray-100 text-gray-700 whitespace-nowrap flex-shrink-0">
                               Processing
                             </span>
                           </div>
-                          
-                          {/* Items */}
-                          <div className="p-4">
+                          <div className="pl-5 pr-4 pb-4">
                             <div className="space-y-3 mb-4">
                               {shipment.items.map((item, idx) => (
                                 <div key={idx} className="flex items-start gap-4 p-4 border border-brand-gray-200 rounded-lg hover:bg-brand-gray-50 transition-colors">
@@ -635,8 +640,6 @@ export default function OrderConfirmationPage({ orderNumber }: OrderConfirmation
                                 </div>
                               ))}
                             </div>
-                            
-                            {/* Shipping Information */}
                             {shipment.address && (
                               <div className="border-t border-brand-gray-200 pt-3 mt-3">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -661,28 +664,30 @@ export default function OrderConfirmationPage({ orderNumber }: OrderConfirmation
                         </div>
                       ))
                     ) : (
-                      // Single shipping: Show all delivery items together
-                      deliveryItems.length > 0 && (
+                      (deliveryItems.length > 0) && (
                         <div className="border border-brand-gray-200 rounded-lg overflow-hidden">
-                          {/* Group Header */}
-                          <div className="bg-brand-gray-50 px-4 py-3 flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                              <span className="font-medium text-brand-black whitespace-nowrap">
-                                Shipment 1
-                              </span>
+                          <div className="flex items-start gap-4 p-4 hover:bg-brand-gray-50 transition-colors">
+                            <div className="flex-shrink-0">
+                              <div className="w-20 h-20 bg-brand-gray-100 rounded-lg overflow-hidden">
+                                <img
+                                  src={deliveryItems[0]?.image || '/images/products/placeholder.png'}
+                                  alt="Shipment 1"
+                                  className="w-full h-full object-cover"
+                                  onError={(e: React.SyntheticEvent<HTMLImageElement>) => { e.currentTarget.src = '/images/products/placeholder.png' }}
+                                />
+                              </div>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-brand-black mb-1">Shipment 1</p>
                               {orderData.shippingAddress && (
-                                <span className="text-sm text-brand-gray-600 truncate hidden sm:inline">
-                                  → {orderData.shippingAddress.name}
-                                </span>
+                                <p className="text-xs text-brand-gray-500 truncate">{orderData.shippingAddress.name}</p>
                               )}
                             </div>
                             <span className="text-xs font-semibold px-2 py-1 rounded bg-gray-100 text-gray-700 whitespace-nowrap flex-shrink-0">
                               Processing
                             </span>
                           </div>
-                          
-                          {/* Items */}
-                          <div className="p-4">
+                          <div className="pl-5 pr-4 pb-4">
                             <div className="space-y-3 mb-4">
                               {deliveryItems.map((item, idx) => (
                                 <div key={idx} className="flex items-start gap-4 p-4 border border-brand-gray-200 rounded-lg hover:bg-brand-gray-50 transition-colors">
@@ -720,8 +725,6 @@ export default function OrderConfirmationPage({ orderNumber }: OrderConfirmation
                                 </div>
                               ))}
                             </div>
-                            
-                            {/* Shipping Information */}
                             {orderData.shippingAddress && (
                               <div className="border-t border-brand-gray-200 pt-3 mt-3">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

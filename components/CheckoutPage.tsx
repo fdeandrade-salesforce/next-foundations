@@ -8,6 +8,7 @@ import { getCurrentUser, User } from '../lib/auth'
 import { CartItem } from './MiniCart'
 import Toast from './Toast'
 import StoreLocatorModal from './StoreLocatorModal'
+import ModalHeader from './ModalHeader'
 
 // ===========================
 // Types & Interfaces
@@ -2618,26 +2619,18 @@ export default function CheckoutPage() {
       {/* Add/Edit Address Modal (matches MyAccountPage pattern) */}
       {showAddressModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={handleCloseAddressModal} />
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full p-6" onClick={(e) => e.stopPropagation()}>
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={handleCloseAddressModal} />
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-semibold text-brand-black">
-                  {editingAddressId ? 'Edit address' : 'Add new address'}
-                </h2>
-                <button
-                  onClick={handleCloseAddressModal}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+              <ModalHeader
+                title={editingAddressId ? 'Edit address' : 'Add new address'}
+                onClose={handleCloseAddressModal}
+                closeAriaLabel="Close"
+              />
 
               {/* Modal Form */}
-              <div className="space-y-4">
+              <div className="p-6 space-y-4">
                 {/* First Name & Last Name */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -2801,24 +2794,18 @@ export default function CheckoutPage() {
       {/* Add Payment Method Modal */}
       {showPaymentModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={handleClosePaymentModal} />
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full p-6" onClick={(e) => e.stopPropagation()}>
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={handleClosePaymentModal} />
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-semibold text-brand-black">Add Payment Method</h2>
-                <button
-                  onClick={handleClosePaymentModal}
-                  className="p-2 text-brand-gray-400 hover:text-brand-black transition-colors"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+              <ModalHeader
+                title="Add Payment Method"
+                onClose={handleClosePaymentModal}
+                closeAriaLabel="Close"
+              />
 
               {/* Modal Form */}
-              <div className="space-y-5">
+              <div className="p-6 space-y-5">
                 {/* Payment Country Selector */}
                 <div>
                   <label className="block text-sm font-medium text-brand-black mb-2">Payment Country</label>

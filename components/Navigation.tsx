@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import SearchModal from './SearchModal'
-import AgentSidebar from './AgentSidebar'
+import { useAgent } from '../context/AgentContext'
 import AccountDropdown from './AccountDropdown'
 import LoginModal from './LoginModal'
 import LogoutConfirmationModal from './LogoutConfirmationModal'
@@ -145,7 +145,7 @@ export default function Navigation() {
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null)
   const [expandedMobileItems, setExpandedMobileItems] = useState<Set<string>>(new Set())
   const [isSearchOpen, setIsSearchOpen] = useState(false)
-  const [isAgentOpen, setIsAgentOpen] = useState(false)
+  const { openAgent } = useAgent()
   const [isLoginOpen, setIsLoginOpen] = useState(false)
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
   const [isCartOpen, setIsCartOpen] = useState(false)
@@ -362,7 +362,7 @@ export default function Navigation() {
             
             {/* Agent/AI Assistant Button */}
             <button 
-              onClick={() => setIsAgentOpen(true)}
+              onClick={() => openAgent()}
               className="p-2 text-brand-black hover:text-brand-blue-500 transition-colors"
               aria-label="Personal Assistant"
             >
@@ -547,13 +547,7 @@ export default function Navigation() {
       <SearchModal 
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
-        onOpenAgent={() => setIsAgentOpen(true)}
-      />
-
-      {/* Agent Sidebar */}
-      <AgentSidebar 
-        isOpen={isAgentOpen}
-        onClose={() => setIsAgentOpen(false)}
+        onOpenAgent={() => openAgent()}
       />
 
       {/* Login Modal */}

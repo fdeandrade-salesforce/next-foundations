@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo } from 'react'
+import ModalHeader from './ModalHeader'
 import { Product } from './ProductListingPage'
 import { getColorHex } from '../lib/color-utils'
 
@@ -116,23 +117,20 @@ export default function MobileAddToCartButton({
         <div className="fixed inset-0 z-[70] md:hidden overflow-y-auto">
           {/* Backdrop */}
           <div
+            data-modal-overlay
             className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
             onClick={() => setIsModalOpen(false)}
           />
 
           {/* Modal Content */}
-          <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-xl max-h-[90vh] overflow-y-auto" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-            <div className="sticky top-0 bg-white border-b border-brand-gray-200 px-4 py-3 flex items-center justify-between z-10">
-              <h2 className="text-lg font-semibold text-brand-black">Add to cart</h2>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="p-2 -mr-2 text-brand-gray-500 hover:text-brand-black transition-colors"
-                aria-label="Close"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+          <div data-modal-panel className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-xl max-h-[90vh] overflow-y-auto" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+            <div className="sticky top-0 bg-white z-10">
+              <ModalHeader
+                title="Add to cart"
+                onClose={() => setIsModalOpen(false)}
+                closeAriaLabel="Close"
+                className="py-3 px-4"
+              />
             </div>
 
             <div className="p-4 space-y-4">

@@ -276,15 +276,19 @@ export const mockOrders: Order[] = [
     amount: '$405.00',
     orderDate: 'Sep 1, 2024',
     items: [
-      { id: 'inv005-item-1', productId: 'fine-cone', image: '/images/products/fine-cone-1.png', name: 'Fine Cone', quantity: 1, price: 39.00 },
-      { id: 'inv005-item-2', productId: 'soft-sphere', image: '/images/products/soft-sphere-1.png', name: 'Soft Sphere', quantity: 1, price: 15.00, originalPrice: 20.00 },
-      { id: 'inv005-item-3', productId: 'solid-cylinder', image: '/images/products/solid-cylinder-1.png', name: 'Solid Cylinder', quantity: 1, price: 15.00, originalPrice: 20.00 },
-      { id: 'inv005-item-4', productId: 'pure-cube-white', image: '/images/products/pure-cube-white-1.png', name: 'Pure Cube', quantity: 1, price: 15.00, originalPrice: 20.00, color: 'White', size: 'One Size' },
-      { id: 'inv005-item-5', productId: 'steady-prism', image: '/images/products/steady-prism-1.png', name: 'Steady Prism', quantity: 1, price: 15.00, originalPrice: 20.00, color: 'Grey', size: 'XL' },
-      { id: 'inv005-item-6', productId: 'pure-cube-white', image: '/images/products/pure-cube-white-1.png', name: 'Pure Cube', quantity: 2, price: 15.00, originalPrice: 20.00, color: 'White', size: 'One Size' },
-      { id: 'inv005-item-7', productId: 'soft-sphere', image: '/images/products/soft-sphere-1.png', name: 'Soft Sphere', quantity: 1, price: 15.00, originalPrice: 20.00, color: 'Grey', size: 'XL' },
-      { id: 'inv005-item-8', productId: 'solid-cylinder', image: '/images/products/solid-cylinder-1.png', name: 'Solid Cylinder', quantity: 1, price: 15.00, originalPrice: 20.00, color: 'Grey', size: 'XL' },
-      { id: 'inv005-item-9', productId: 'pure-cube-gray', image: '/images/products/pure-cube-gray-1.png', name: 'Pure Cube', quantity: 1, price: 49.00, color: 'Gray', size: 'M' },
+      // Bundle Set 1 (3 items only)
+      { id: 'inv005-item-1', productId: 'fine-cone', image: '/images/products/fine-cone-1.png', name: 'Fine Cone', quantity: 1, price: 39.00, bundleSetId: 'set-1' },
+      { id: 'inv005-item-2', productId: 'soft-sphere', image: '/images/products/soft-sphere-1.png', name: 'Soft Sphere', quantity: 1, price: 15.00, originalPrice: 20.00, bundleSetId: 'set-1' },
+      { id: 'inv005-item-3', productId: 'solid-cylinder', image: '/images/products/solid-cylinder-1.png', name: 'Solid Cylinder', quantity: 1, price: 15.00, originalPrice: 20.00, bundleSetId: 'set-1' },
+      // Bundle Set 2 (3 items only)
+      { id: 'inv005-item-4', productId: 'pure-cube-white', image: '/images/products/pure-cube-white-1.png', name: 'Pure Cube', quantity: 1, price: 15.00, originalPrice: 20.00, color: 'White', size: 'One Size', bundleSetId: 'set-2' },
+      { id: 'inv005-item-5', productId: 'steady-prism', image: '/images/products/steady-prism-1.png', name: 'Steady Prism', quantity: 1, price: 15.00, originalPrice: 20.00, color: 'Grey', size: 'XL', bundleSetId: 'set-2' },
+      { id: 'inv005-item-6', productId: 'pure-cube-white', image: '/images/products/pure-cube-white-1.png', name: 'Pure Cube', quantity: 2, price: 15.00, originalPrice: 20.00, color: 'White', size: 'One Size', bundleSetId: 'set-2' },
+      // Bundle Set 3 (3 items only)
+      { id: 'inv005-item-7', productId: 'soft-sphere', image: '/images/products/soft-sphere-1.png', name: 'Soft Sphere', quantity: 1, price: 15.00, originalPrice: 20.00, color: 'Grey', size: 'XL', bundleSetId: 'set-3' },
+      { id: 'inv005-item-8', productId: 'solid-cylinder', image: '/images/products/solid-cylinder-1.png', name: 'Solid Cylinder', quantity: 1, price: 15.00, originalPrice: 20.00, color: 'Grey', size: 'XL', bundleSetId: 'set-3' },
+      { id: 'inv005-item-9', productId: 'pure-cube-gray', image: '/images/products/pure-cube-gray-1.png', name: 'Pure Cube', quantity: 1, price: 49.00, color: 'Gray', size: 'M', bundleSetId: 'set-3' },
+      // Individual products (non-bundles)
       { id: 'inv005-item-10', productId: 'fine-cone', image: '/images/products/fine-cone-1.png', name: 'Fine Cone', quantity: 1, price: 39.00, color: 'Black', size: 'L' },
       { id: 'inv005-item-11', productId: 'steady-prism', image: '/images/products/steady-prism-1.png', name: 'Steady Prism', quantity: 2, price: 15.00, originalPrice: 20.00, color: 'Grey', size: 'One Size' },
       { id: 'inv005-item-12', productId: 'pure-cube-white', image: '/images/products/pure-cube-white-1.png', name: 'Pure Cube', quantity: 1, price: 15.00, originalPrice: 20.00, color: 'White', size: 'One Size' },

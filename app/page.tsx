@@ -4,13 +4,17 @@ import React, { useState, useEffect } from 'react'
 import Navigation from '../components/Navigation'
 import AnnouncementBar from '../components/AnnouncementBar'
 import Hero from '../components/Hero'
+import ProductCarousel from '../components/ProductCarousel'
 import ProductGrid from '../components/ProductGrid'
+import PromoBannerGrid from '../components/PromoBannerGrid'
+import ProductCategoriesGrid from '../components/ProductCategoriesGrid'
 import Footer from '../components/Footer'
 import QuickViewModal from '../components/QuickViewModal'
 import NotifyMeModal from '../components/NotifyMeModal'
 import { getFeaturedProducts, getNewArrivals, getAllProductsWithVariants } from '../lib/products'
 import { Product } from '../components/ProductListingPage'
 import { toggleWishlist, getWishlistIds } from '../lib/wishlist'
+import { getRecentlyViewed } from '../lib/recentlyViewed'
 import { addToCart } from '../lib/cart'
 
 export default function Home() {
@@ -20,13 +24,14 @@ export default function Home() {
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null)
   const [notifyMeProduct, setNotifyMeProduct] = useState<Product | null>(null)
   const [wishlistIds, setWishlistIds] = useState<string[]>([])
+  const [recentlyViewed, setRecentlyViewed] = useState<Product[]>([])
 
   // Load products on mount
   useEffect(() => {
     const loadProducts = async () => {
       const [featured, newArr, all] = await Promise.all([
         getFeaturedProducts(),
-        getNewArrivals(),
+        getNewArrivals(20),
         getAllProductsWithVariants(),
       ])
       setFeaturedProducts(featured)
@@ -34,6 +39,19 @@ export default function Home() {
       setAllProducts(all)
     }
     loadProducts()
+  }, [])
+
+  // Load recently viewed on mount and when page becomes visible (e.g. returning from product page)
+  useEffect(() => {
+    setRecentlyViewed(getRecentlyViewed())
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        setRecentlyViewed(getRecentlyViewed())
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [])
 
   // Load wishlist on mount and listen for updates
@@ -102,10 +120,11 @@ export default function Home() {
 
         {/* Featured Products */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <ProductGrid
+          <ProductCarousel
+            id="featured"
             title="Featured Collection"
+            shopAllLink="/shop"
             products={featuredProducts}
-            columns={4}
             onUnifiedAction={handleUnifiedAction}
             onAddToWishlist={handleAddToWishlist}
             wishlistIds={wishlistIds}
@@ -113,13 +132,101 @@ export default function Home() {
           />
         </div>
 
+        {/* Step Into Elegance - Product Categories Carousel */}
+        <ProductCategoriesGrid
+          title="Step into Elegance"
+          subtitle="At Salesforce Foundations, we believe design should be accessible, innovative, and timeless. Our collections are crafted for the modern individual who values quality, form, and lasting beauty."
+          variant="category"
+          cards={[
+            {
+              title: 'Furniture',
+              image: '/images/hero/hero-collection.png',
+              link: '/shop',
+              description: 'Timeless pieces for modern living',
+            },
+            {
+              title: 'Lighting',
+              image: '/images/products/pure-cube-white-1.png',
+              link: '/shop',
+              description: 'Sculptural forms that illuminate',
+            },
+            {
+              title: 'Accessories',
+              image: '/images/products/spiral-accent-1.png',
+              link: '/accessories',
+              description: 'Thoughtful details for your space',
+            },
+            {
+              title: 'New Releases',
+              image: '/images/hero/hero-main.png',
+              link: '/new-releases',
+              description: 'Latest additions to the collection',
+            },
+            {
+              title: 'Women',
+              image: '/images/hero/hero-collection.png',
+              link: '/women',
+              description: 'Curated for her',
+            },
+            {
+              title: 'Men',
+              image: '/images/products/fusion-block-1.png',
+              link: '/men',
+              description: 'Designed for him',
+            },
+            {
+              title: 'Geometric',
+              image: '/images/products/pure-cube-white-1.png',
+              link: '/shop',
+              description: 'Clean lines, bold shapes',
+            },
+            {
+              title: 'Modular',
+              image: '/images/products/base-module-1.png',
+              link: '/modular',
+              description: 'Customize your space',
+            },
+            {
+              title: 'Premium',
+              image: '/images/products/signature-form-white-1.png',
+              link: '/premium',
+              description: 'Exceptional craftsmanship',
+            },
+          ]}
+          className="bg-brand-gray-50"
+        />
+
+        {/* Promo Banner Grid */}
+        <PromoBannerGrid
+          banners={[
+            {
+              title: 'Curated Collections',
+              subtitle: 'Discover',
+              image: '/images/hero/hero-collection.png',
+              ctaText: 'Shop Now',
+              ctaLink: '/shop',
+              overlayVariant: 'dark',
+            },
+            {
+              title: 'Limited Editions',
+              subtitle: 'Exclusive',
+              image: '/images/hero/hero-main.png',
+              ctaText: 'Explore',
+              ctaLink: '/new-releases',
+              overlayVariant: 'dark',
+            },
+          ]}
+          className="bg-white"
+        />
+
         {/* New Arrivals Section */}
         <div className="bg-brand-gray-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <ProductGrid
+            <ProductCarousel
+              id="new-arrivals"
               title="New Arrivals"
+              shopAllLink="/new-releases"
               products={newArrivals}
-              columns={4}
               onUnifiedAction={handleUnifiedAction}
               onAddToWishlist={handleAddToWishlist}
               wishlistIds={wishlistIds}
@@ -128,23 +235,45 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Brand Story Section */}
-        <section className="py-16 md:py-24 bg-white">
-          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-            <h2 className="text-3xl md:text-4xl font-normal text-brand-black mb-6 tracking-tight">
-              Step into Elegance
-            </h2>
-            <p className="text-lg text-brand-gray-700 leading-relaxed mb-8 font-normal">
-              At Salesforce Foundations, we believe design should be accessible, innovative, and timeless. 
-              Our collections are crafted for the modern individual who values quality, 
-              form, and lasting beauty.
-            </p>
-            <p className="text-base text-brand-gray-600 leading-relaxed font-normal">
-              Discover our commitment to creating objects that inspire, 
-              adapt to your space, and stand the test of time.
-            </p>
+        {/* New Arrivals Promo Banner Grid (Repeat) */}
+        <PromoBannerGrid
+          banners={[
+            {
+              title: 'Bestsellers',
+              subtitle: 'Customer Favorites',
+              image: '/images/products/signature-form-white-1.png',
+              ctaText: 'Shop Best Sellers',
+              ctaLink: '/shop',
+              overlayVariant: 'dark',
+            },
+            {
+              title: 'Bundle & Save',
+              subtitle: 'Special Offer',
+              image: '/images/products/bundle-1.png',
+              ctaText: 'View Bundles',
+              ctaLink: '/shop',
+              overlayVariant: 'dark',
+            },
+          ]}
+          className="bg-white"
+        />
+
+        {/* Recently Viewed */}
+        {recentlyViewed.length > 0 && (
+          <div className="bg-brand-gray-50">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <ProductGrid
+                title="Recently Viewed"
+                products={recentlyViewed}
+                columns={4}
+                onUnifiedAction={handleUnifiedAction}
+                onAddToWishlist={handleAddToWishlist}
+                wishlistIds={wishlistIds}
+                allProducts={allProducts}
+              />
+            </div>
           </div>
-        </section>
+        )}
 
         {/* Newsletter Section */}
         <section className="py-16 md:py-24">

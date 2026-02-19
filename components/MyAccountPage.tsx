@@ -19,6 +19,9 @@ import Toast from './Toast'
 import QuickViewModal from './QuickViewModal'
 import NotifyMeModal from './NotifyMeModal'
 import StoreLocatorModal from './StoreLocatorModal'
+import WriteReviewModal from './WriteReviewModal'
+import ModalHeader from './ModalHeader'
+import { useAgent } from '../context/AgentContext'
 
 interface ShippingGroup {
   groupId: string
@@ -48,6 +51,7 @@ interface Order {
     image: string
     name: string
     id: string
+    productId?: string
     quantity: number
     color?: string
     size?: string
@@ -55,6 +59,7 @@ interface Order {
     originalPrice?: number
     store?: string
     shippingGroup?: string
+    bundleSetId?: string
   }>
   subtotal?: number
   promotions?: number
@@ -176,6 +181,37 @@ function OrderDetailContent({ orderNumber, showToastMessage }: { orderNumber: st
   const [returnReason, setReturnReason] = useState('')
   const [returnQuantity, setReturnQuantity] = useState(1)
   const [cancelReason, setCancelReason] = useState('')
+  const [reviewModalProduct, setReviewModalProduct] = useState<{ id: string; name: string } | null>(null)
+  const [reviewedProductIds, setReviewedProductIds] = useState<Set<string>>(new Set())
+  
+  // Load reviewed product IDs from sessionStorage (persists within session, per-order)
+  useEffect(() => {
+    if (!orderNumber || typeof window === 'undefined') return
+    try {
+      const stored = sessionStorage.getItem(`order-reviewed-${orderNumber}`)
+      if (stored) {
+        const ids = JSON.parse(stored) as string[]
+        setReviewedProductIds(new Set(ids))
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }, [orderNumber])
+  
+  const markProductAsReviewed = (productId: string) => {
+    setReviewedProductIds(prev => {
+      const next = new Set(prev)
+      next.add(productId)
+      if (orderNumber && typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem(`order-reviewed-${orderNumber}`, JSON.stringify(Array.from(next)))
+        } catch {
+          // ignore
+        }
+      }
+      return next
+    })
+  }
   
   // Fetch order by number from repository
   useEffect(() => {
@@ -199,6 +235,7 @@ function OrderDetailContent({ orderNumber, showToastMessage }: { orderNumber: st
             orderDate: foundOrder.orderDate,
             items: foundOrder.items.map(item => ({
               id: item.id,
+              productId: item.productId,
               image: item.image,
               name: item.name,
               quantity: item.quantity,
@@ -208,6 +245,7 @@ function OrderDetailContent({ orderNumber, showToastMessage }: { orderNumber: st
               originalPrice: item.originalPrice,
               store: item.store,
               shippingGroup: item.shippingGroup,
+              bundleSetId: item.bundleSetId,
             })),
             subtotal: foundOrder.subtotal,
             promotions: foundOrder.promotions,
@@ -288,7 +326,7 @@ function OrderDetailContent({ orderNumber, showToastMessage }: { orderNumber: st
   if (!order) {
     return (
       <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-8 text-center">
-        <h2 className="text-xl font-semibold text-brand-black mb-2">Order Not Found</h2>
+        <h2 className="text-lg font-semibold text-brand-black mb-2">Order Not Found</h2>
         <p className="text-brand-gray-600 mb-4">
           The order number &quot;{orderNumber}&quot; could not be found.
         </p>
@@ -350,18 +388,43 @@ function OrderDetailContent({ orderNumber, showToastMessage }: { orderNumber: st
   }
   
   const groupedItems = getGroupedItems()
-  
+
+  // Bundle Set simulation: INV005 (many products) gets a curated "Complete Your Collection" presentation
+  const isBundleSetOrder = order.orderNumber === 'INV005' || (order.items && order.items.length >= 10)
+
+  // Group items by bundleSetId for multi-set orders (e.g. INV005 has set-1, set-2, set-3)
+  const bundleSetLabels: Record<string, string> = {
+    'set-1': 'Bundle Set 1',
+    'set-2': 'Bundle Set 2',
+    'set-3': 'Bundle Set 3',
+    default: 'Individual products',
+  }
+  const getBundleSetGroups = () => {
+    const groups = new Map<string, typeof order.items>()
+    ;(order.items ?? []).forEach((item) => {
+      const key = (item as { bundleSetId?: string }).bundleSetId ?? 'default'
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(item)
+    })
+    return Array.from(groups.entries()).map(([setId, items]) => ({
+      setId,
+      label: bundleSetLabels[setId] ?? `Bundle Set ${setId}`,
+      items,
+    }))
+  }
+  const bundleSetGroups = isBundleSetOrder ? getBundleSetGroups() : []
+
   return (
     <div className="space-y-6">
       {/* Order Header Card */}
       <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6 pb-6 border-b border-brand-gray-200">
           <div>
-            <h1 className="text-2xl font-semibold text-brand-black mb-1">Order Details</h1>
-            <p className="text-base text-brand-gray-600">Order #{order.orderNumber}</p>
+            <h1 className="text-lg font-semibold text-brand-black mb-1">Order Details</h1>
+            <p className="text-base text-brand-gray-600">#{order.orderNumber}</p>
             {order.customerEmail && (
               <p className="text-sm text-brand-gray-500 mt-1">
-                Confirmation email sent to {order.customerEmail}
+                Receipt and order details sent to {order.customerEmail}
               </p>
             )}
           </div>
@@ -380,37 +443,257 @@ function OrderDetailContent({ orderNumber, showToastMessage }: { orderNumber: st
           {/* Items Ordered */}
           <div className="lg:col-span-2 space-y-4">
             <h3 className="text-lg font-semibold text-brand-black">Items Ordered</h3>
-            
-            {groupedItems.map((group, groupIdx) => (
-              <div key={group.groupId} className="border border-brand-gray-200 rounded-lg overflow-hidden">
-                {/* Group Header */}
-                <div className="bg-brand-gray-50 px-4 py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="font-medium text-brand-black">
-                      {order.isBOPIS 
-                        ? `Pickup at ${group.pickupLocation || 'Store'}`
-                        : `Shipment ${groupIdx + 1}`
-                      }
-                    </span>
-                    {group.shippingAddress && !order.isBOPIS && (
-                      <span className="text-sm text-brand-gray-600 hidden sm:inline">
-                        → {group.shippingAddress?.split(',')[0]}
-                      </span>
-                    )}
+
+            {/* Item action order (all card types): Rate & Review → Return Item → Cancel Item */}
+            {/* Bundle Set presentation: bundle header card with product cards nested inside (indented) */}
+            {isBundleSetOrder ? (
+              <div className="border border-brand-gray-200 rounded-lg overflow-hidden">
+                {/* Single Shipment 1 title bar for INV005 (one shipment) */}
+                <div className="flex items-center justify-between px-4 py-3 bg-brand-gray-50">
+                  <h4 className="text-sm font-semibold text-brand-black">Shipment 1</h4>
+                  <span className={`text-xs font-semibold px-2 py-1 rounded-badge ${getStatusBadge(groupedItems[0]?.status ?? order.status)}`}>
+                    {groupedItems[0]?.status ?? order.status}
+                  </span>
+                </div>
+                <div className="space-y-4 px-4 pt-4 pb-4">
+                {bundleSetGroups.map(({ setId, label, items: setItems }) => {
+                  const items = setItems ?? []
+                  const defaultGroup = groupedItems[0]
+                  const canReturnItem = order.canReturn && (defaultGroup?.status === 'Delivered' || order.status === 'Delivered' || order.status === 'Picked Up')
+                  const canCancelItem = order.canCancel && order.status !== 'Cancelled'
+                  const bundleTotal = items.reduce((sum, i) => sum + (i.price ?? 0) * (i.quantity ?? 1), 0)
+                  const bundleOriginalTotal = items.reduce((sum, i) => sum + (i.originalPrice ?? i.price ?? 0) * (i.quantity ?? 1), 0)
+                  const bundleImageSrc = setId === 'set-1' ? '/images/products/bundle-1.png' : setId === 'set-2' ? '/images/products/bundle-2.png' : setId === 'set-3' ? '/images/products/bundle-3.png' : items[0]?.image ?? '/images/placeholder.png'
+
+                  if (setId === 'default') {
+                    const canReviewDefaultItem = defaultGroup?.status === 'Delivered' || order.status === 'Delivered' || order.status === 'Picked Up'
+                    return (
+                      <div key={setId} className="space-y-3">
+                        {items.map((item, idx) => (
+                          <div key={item.id || idx} className="flex items-start gap-4 p-4 border border-brand-gray-200 rounded-lg hover:bg-brand-gray-50 transition-colors">
+                            <Link href={`/product/${item.productId || item.id}`} className="flex-shrink-0 block">
+                              <div className="w-20 h-20 bg-brand-gray-100 rounded-lg overflow-hidden">
+                                <Image src={item.image} alt={item.name} width={80} height={80} className="w-full h-full object-cover" />
+                              </div>
+                            </Link>
+                            <div className="flex-1 min-w-0">
+                              <Link href={`/product/${item.productId || item.id}`} className="block">
+                                <p className="text-sm font-medium text-brand-black mb-1 hover:text-brand-blue-600 transition-colors">{item.name}</p>
+                              </Link>
+                              {(item.color || item.size) && (
+                                <p className="text-xs text-brand-gray-500 mb-1">{[item.color, item.size].filter(Boolean).join(' / ')}</p>
+                              )}
+                              {item.quantity != null && <p className="text-xs text-brand-gray-500 mb-2">Quantity: {item.quantity}</p>}
+                              {(canReturnItem || canReviewDefaultItem) && (
+                                <div className="flex flex-wrap gap-3 mt-2">
+                                  {canReviewDefaultItem && item.id && item.name && (
+                                reviewedProductIds.has(item.id) ? (
+                                  <span className="inline-flex items-center gap-1 text-xs text-green-600 font-medium">
+                                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                    </svg>
+                                    Review submitted
+                                  </span>
+                                ) : (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setReviewModalProduct({ id: item.id, name: item.name })
+                                    }}
+                                    className="text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline font-medium"
+                                  >
+                                    Rate & Review
+                                  </button>
+                                )
+                              )}
+                                  {canReturnItem && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setSelectedItemForReturn({ item, orderNumber: order.orderNumber, groupId: 'default' })
+                                        setReturnQuantity(item.quantity || 1)
+                                        setReturnReason('')
+                                        setShowReturnItemModal(true)
+                                      }}
+                                      className="text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline font-medium"
+                                    >
+                                      Return Item
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex-shrink-0 flex flex-col items-end gap-2">
+                              {item.price != null && (
+                                <div className="text-right">
+                                  {item.originalPrice != null && item.originalPrice > item.price && (
+                                    <p className="text-xs text-brand-gray-400 line-through mb-0.5">${item.originalPrice.toFixed(2)}</p>
+                                  )}
+                                  <p className="text-sm font-semibold text-brand-black">${item.price.toFixed(2)}</p>
+                                </div>
+                              )}
+                              <button className="px-4 py-2 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm whitespace-nowrap">
+                                Buy Again
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div key={setId} className="border border-brand-gray-200 rounded-lg overflow-hidden">
+                      {/* Bundle header row */}
+                      <div className="flex items-start gap-4 p-4 hover:bg-brand-gray-50 transition-colors">
+                        <div className="flex-shrink-0">
+                          <div className="w-20 h-20 bg-brand-gray-100 rounded-lg overflow-hidden">
+                            <Image src={bundleImageSrc} alt={label} width={80} height={80} className="w-full h-full object-cover" />
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-brand-black mb-1">{label}</p>
+                          <p className="text-xs text-brand-gray-500">Quantity: 1</p>
+                        </div>
+                        <div className="flex-shrink-0 flex flex-col items-end gap-2">
+                          <div className="text-right">
+                            {bundleOriginalTotal > bundleTotal && (
+                              <p className="text-xs text-brand-gray-400 line-through mb-0.5">${bundleOriginalTotal.toFixed(2)}</p>
+                            )}
+                            <p className="text-sm font-semibold text-brand-black">${bundleTotal.toFixed(2)}</p>
+                          </div>
+                          <button className="px-4 py-2 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm whitespace-nowrap">
+                            Buy Again
+                          </button>
+                        </div>
+                      </div>
+                      {/* Product cards inside bundle (indented) - no prices, "Included in bundle" */}
+                      <div className="pl-5 pr-4 pb-4 space-y-3">
+                        {items.map((item, idx) => (
+                          <div key={item.id || idx} className="flex items-start gap-4 p-4 border border-brand-gray-200 rounded-lg hover:bg-brand-gray-50 transition-colors">
+                            <Link href={`/product/${item.productId || item.id}`} className="flex-shrink-0 block">
+                              <div className="w-20 h-20 bg-brand-gray-100 rounded-lg overflow-hidden">
+                                <Image src={item.image} alt={item.name} width={80} height={80} className="w-full h-full object-cover" />
+                              </div>
+                            </Link>
+                            <div className="flex-1 min-w-0">
+                              <Link href={`/product/${item.productId || item.id}`} className="block">
+                                <p className="text-sm font-medium text-brand-black mb-1 hover:text-brand-blue-600 transition-colors">{item.name}</p>
+                              </Link>
+                              {(item.color || item.size) && (
+                                <p className="text-xs text-brand-gray-500 mb-1">{[item.color, item.size].filter(Boolean).join(' / ')}</p>
+                              )}
+                              {item.quantity != null && <p className="text-xs text-brand-gray-500 mb-1">Quantity: {item.quantity}</p>}
+                              <p className="text-xs text-brand-gray-600 font-medium">Included in bundle</p>
+                              {(canReturnItem || canCancelItem) && (
+                                <div className="flex flex-wrap gap-3 mt-2">
+                                  {(canReturnItem || (defaultGroup?.status === 'Delivered' || order.status === 'Delivered' || order.status === 'Picked Up')) && item.id && item.name && (
+                                    reviewedProductIds.has(item.id) ? (
+                                      <span className="inline-flex items-center gap-1 text-xs text-green-600 font-medium">
+                                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                        </svg>
+                                        Review submitted
+                                      </span>
+                                    ) : (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          setReviewModalProduct({ id: item.id, name: item.name })
+                                        }}
+                                        className="text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline font-medium"
+                                      >
+                                        Rate & Review
+                                      </button>
+                                    )
+                                  )}
+                                  {canReturnItem && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setSelectedItemForReturn({ item, orderNumber: order.orderNumber, groupId: 'default' })
+                                        setReturnQuantity(item.quantity || 1)
+                                        setReturnReason('')
+                                        setShowReturnItemModal(true)
+                                      }}
+                                      className="text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline font-medium"
+                                    >
+                                      Return Item
+                                    </button>
+                                  )}
+                                  {canCancelItem && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setSelectedItemForCancel({ item, orderNumber: order.orderNumber, groupId: 'default' })
+                                        setCancelReason('')
+                                        setShowCancelItemModal(true)
+                                      }}
+                                      className="text-xs text-red-600 hover:text-red-700 hover:underline font-medium"
+                                    >
+                                      Cancel Item
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+                </div>
+
+                {/* Separator (with side margins) + Tracking for Bundle Set */}
+                {groupedItems.length > 0 && groupedItems[0].trackingNumber && (
+                  <div className="px-4 pb-4">
+                    <div className="border-t border-brand-gray-200 pb-4" />
+                    <div className="bg-brand-blue-50 border border-brand-blue-200 rounded-lg p-3">
+                      <p className="text-xs font-medium text-brand-gray-600 mb-1">Tracking Number</p>
+                      <p className="text-sm font-mono font-medium text-brand-black">{groupedItems[0].trackingNumber}</p>
+                      {groupedItems[0].carrier && (
+                        <p className="text-xs text-brand-gray-600 mt-1">{groupedItems[0].carrier}</p>
+                      )}
+                      {groupedItems[0].carrierTrackingUrl && (
+                        <a
+                          href={groupedItems[0].carrierTrackingUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline mt-2"
+                        >
+                          Track on {groupedItems[0].carrier || 'carrier'} website
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </a>
+                      )}
+                    </div>
                   </div>
-                  <span className={`text-xs font-semibold px-2 py-1 rounded ${getStatusBadge(group.status)}`}>
+                )}
+              </div>
+            ) : (
+            <>
+            {groupedItems.map((group, groupIdx) => {
+              const groupLabel = order.isBOPIS
+                ? `Pickup at ${group.pickupLocation || 'Store'}`
+                : `Shipment ${groupIdx + 1}`
+              return (
+              <div key={group.groupId} className={`border border-brand-gray-200 rounded-lg overflow-hidden ${groupIdx > 0 ? 'mt-8' : ''}`}>
+                {/* Section header - light grey (inside container) */}
+                <div className="flex items-center justify-between px-4 py-3 bg-brand-gray-50">
+                  <h4 className="text-sm font-semibold text-brand-black">{groupLabel}</h4>
+                  <span className={`text-xs font-semibold px-2 py-1 rounded-badge ${getStatusBadge(group.status)}`}>
                     {group.status}
                   </span>
                 </div>
-                
-                {/* Items */}
-                <div className="p-4">
-                  <div className="space-y-3 mb-4">
+                {/* Individual item cards - margin between title and first item */}
+                <div className="space-y-3 px-4 pt-4 pb-4">
                     {group.items.map((item, idx) => {
+                      // Determine if item is delivered (eligible for review)
+                      const isItemDelivered = group.status === 'Delivered' || group.status === 'Picked Up' || order.status === 'Delivered' || order.status === 'Picked Up'
                       // Determine if item can be returned (delivered/picked up items)
-                      const canReturnItem = order.canReturn && 
-                        (group.status === 'Delivered' || group.status === 'Picked Up' || order.status === 'Delivered' || order.status === 'Picked Up')
-                      
+                      const canReturnItem = order.canReturn && isItemDelivered
                       // Determine if item can be cancelled (not yet delivered/picked up)
                       const canCancelItem = order.canCancel && 
                         order.status !== 'Cancelled' && 
@@ -419,9 +702,9 @@ function OrderDetailContent({ orderNumber, showToastMessage }: { orderNumber: st
                         group.status !== 'In Transit'
                       
                       return (
-                        <div key={idx} className="flex items-start gap-4 p-4 border border-brand-gray-200 rounded-lg hover:bg-brand-gray-50 transition-colors">
+                        <div key={idx} className="flex items-start gap-4 p-4 bg-white border border-brand-gray-200 rounded-lg hover:bg-brand-gray-50 transition-colors">
                           {/* Product Image */}
-                          <div className="flex-shrink-0">
+                          <Link href={`/product/${item.productId || item.id}`} className="flex-shrink-0 block">
                             <div className="w-20 h-20 bg-brand-gray-100 rounded-lg overflow-hidden">
                           <Image
                             src={item.image}
@@ -431,11 +714,13 @@ function OrderDetailContent({ orderNumber, showToastMessage }: { orderNumber: st
                             className="w-full h-full object-cover"
                           />
                         </div>
-                          </div>
+                          </Link>
                           
                           {/* Product Details */}
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-brand-black mb-1">{item.name}</p>
+                            <Link href={`/product/${item.productId || item.id}`} className="block">
+                              <p className="text-sm font-medium text-brand-black mb-1 hover:text-brand-blue-600 transition-colors">{item.name}</p>
+                            </Link>
                         {(item.color || item.size) && (
                               <p className="text-xs text-brand-gray-500 mb-1">
                             {[item.color, item.size].filter(Boolean).join(' / ')}
@@ -446,8 +731,28 @@ function OrderDetailContent({ orderNumber, showToastMessage }: { orderNumber: st
                             )}
                             
                             {/* Item Actions */}
-                            {(canReturnItem || canCancelItem) && (
+                            {(isItemDelivered || canReturnItem || canCancelItem) && (
                               <div className="flex flex-wrap gap-3 mt-2">
+                                {isItemDelivered && item.id && item.name && (
+                                  reviewedProductIds.has(item.id) ? (
+                                    <span className="inline-flex items-center gap-1 text-xs text-green-600 font-medium">
+                                      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                      </svg>
+                                      Review submitted
+                                    </span>
+                                  ) : (
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setReviewModalProduct({ id: item.id, name: item.name })
+                                      }}
+                                      className="text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline font-medium"
+                                    >
+                                      Rate & Review
+                                    </button>
+                                  )
+                                )}
                                 {canReturnItem && (
                                   <button 
                                     onClick={(e) => {
@@ -500,76 +805,80 @@ function OrderDetailContent({ orderNumber, showToastMessage }: { orderNumber: st
                         </div>
                       )
                     })}
-                  </div>
-                  
-                  {/* Pickup Information - Always visible for BOPIS orders */}
-                  {order.isBOPIS && (group.pickupLocation || group.pickupAddress || group.pickupDate || group.pickupReadyDate) && (
-                    <div className="border-t border-brand-gray-200 pt-3 mt-3">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {group.pickupLocation && (
-                              <div className="bg-brand-blue-50 border border-brand-blue-200 rounded-lg p-3">
-                                <p className="text-xs font-medium text-brand-gray-600 mb-1">Pickup Location</p>
-                                <p className="text-sm font-medium text-brand-black">{group.pickupLocation}</p>
-                                {group.pickupAddress && (
-                                  <p className="text-xs text-brand-gray-600 mt-1">{group.pickupAddress}</p>
-                                )}
-                              </div>
-                        )}
-                              {(group.pickupDate || group.pickupReadyDate) && (
-                                <div className="bg-white border border-brand-gray-200 rounded-lg p-3">
-                                  <p className="text-xs font-medium text-brand-gray-600 mb-1">
-                                    {group.status === 'Picked Up' ? 'Picked Up On' : 'Pickup Window'}
-                                  </p>
-                                  <p className="text-sm font-medium text-brand-black">
-                                    {group.pickupDate || group.pickupReadyDate}
-                                  </p>
-                                </div>
-                              )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Tracking Info - Always visible (only for non-BOPIS orders) */}
-                  {!order.isBOPIS && (group.trackingNumber || group.carrierTrackingUrl || group.shippingAddress) && (
-                    <div className="border-t border-brand-gray-200 pt-3 mt-3">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              {group.trackingNumber && (
-                                <div className="bg-brand-blue-50 border border-brand-blue-200 rounded-lg p-3">
-                                  <p className="text-xs font-medium text-brand-gray-600 mb-1">Tracking Number</p>
-                                  <p className="text-sm font-mono font-medium text-brand-black">{group.trackingNumber}</p>
-                                  {group.carrier && (
-                                    <p className="text-xs text-brand-gray-600 mt-1">{group.carrier}</p>
-                                  )}
-                                  {group.carrierTrackingUrl && (
-                                    <a
-                                      href={group.carrierTrackingUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1 text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline mt-2"
-                                    >
-                                      Track on {group.carrier || 'carrier'} website
-                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                      </svg>
-                                    </a>
-                                  )}
-                                </div>
-                              )}
-                        {group.shippingAddress && (
-                              <div className="bg-white border border-brand-gray-200 rounded-lg p-3">
-                                <p className="text-xs font-medium text-brand-gray-600 mb-1">Shipping Address</p>
-                                <p className="text-sm text-brand-black">{group.shippingAddress}</p>
-                                {group.shippingMethod && (
-                                  <p className="text-xs text-brand-gray-500 mt-2">{group.shippingMethod}</p>
-                                )}
-                              </div>
-                          )}
-                        </div>
-                    </div>
-                  )}
                 </div>
+                
+                {/* Separator (with side margins) + Pickup Information */}
+                {order.isBOPIS && (group.pickupLocation || group.pickupAddress || group.pickupDate || group.pickupReadyDate) && (
+                  <div className="px-4 pb-4">
+                    <div className="border-t border-brand-gray-200 pb-4" />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {group.pickupLocation && (
+                      <div className="bg-brand-blue-50 border border-brand-blue-200 rounded-lg p-4">
+                        <p className="text-xs font-semibold text-brand-black mb-2">Pickup Location</p>
+                        <p className="text-sm font-semibold text-brand-black">{group.pickupLocation}</p>
+                        {group.pickupAddress && (
+                          <p className="text-sm text-brand-black mt-1">{group.pickupAddress}</p>
+                        )}
+                      </div>
+                    )}
+                    {(group.pickupDate || group.pickupReadyDate) && (
+                      <div className="bg-white border border-brand-gray-200 rounded-lg p-4">
+                        <p className="text-xs font-semibold text-brand-black mb-2">
+                          {group.status === 'Picked Up' ? 'Picked Up On' : 'Pickup Window'}
+                        </p>
+                        <p className="text-sm font-semibold text-brand-black">
+                          {group.pickupDate || group.pickupReadyDate}
+                        </p>
+                      </div>
+                    )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Separator (with side margins) + Tracking Info */}
+                {!order.isBOPIS && (group.trackingNumber || group.carrierTrackingUrl || group.shippingAddress) && (
+                  <div className="px-4 pb-4">
+                    <div className="border-t border-brand-gray-200 pb-4" />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {group.trackingNumber && (
+                      <div className="bg-brand-blue-50 border border-brand-blue-200 rounded-lg p-4">
+                        <p className="text-xs font-semibold text-brand-black mb-2">Tracking</p>
+                        <p className="text-sm font-mono font-medium text-brand-black">{group.trackingNumber}</p>
+                        {group.carrier && (
+                          <p className="text-xs text-brand-gray-600 mt-1">{group.carrier}</p>
+                        )}
+                        {group.carrierTrackingUrl && (
+                          <a
+                            href={group.carrierTrackingUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-xs text-brand-blue-500 hover:text-brand-blue-600 hover:underline font-medium mt-2"
+                          >
+                            Track on {group.carrier || 'carrier'} website
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
+                        )}
+                      </div>
+                    )}
+                    {group.shippingAddress && (
+                      <div className="bg-white border border-brand-gray-200 rounded-lg p-4">
+                        <p className="text-xs font-semibold text-brand-black mb-2">Shipping Address</p>
+                        <p className="text-sm text-brand-black">{group.shippingAddress}</p>
+                        {group.shippingMethod && (
+                          <p className="text-xs text-brand-gray-500 mt-2">{group.shippingMethod}</p>
+                        )}
+                      </div>
+                    )}
+                    </div>
+                  </div>
+                )}
               </div>
-            ))}
+            );
+            })}
+            </>
+            )}
           </div>
           
           {/* Order Summary */}
@@ -745,20 +1054,12 @@ function OrderDetailContent({ orderNumber, showToastMessage }: { orderNumber: st
       {/* Return Item Modal */}
       {showReturnItemModal && selectedItemForReturn && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={() => setShowReturnItemModal(false)}></div>
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
+            <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={() => setShowReturnItemModal(false)}></div>
             <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               {/* Header */}
-              <div className="sticky top-0 bg-white border-b border-brand-gray-200 px-6 py-4 flex items-center justify-between rounded-t-xl">
-                <h2 className="text-xl font-semibold text-brand-black">Return Item</h2>
-                <button
-                  onClick={() => setShowReturnItemModal(false)}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+              <div className="sticky top-0 bg-white z-10 rounded-t-xl">
+                <ModalHeader title="Return Item" onClose={() => setShowReturnItemModal(false)} closeAriaLabel="Close" />
               </div>
 
               {/* Content */}
@@ -881,20 +1182,12 @@ function OrderDetailContent({ orderNumber, showToastMessage }: { orderNumber: st
       {/* Cancel Item Modal */}
       {showCancelItemModal && selectedItemForCancel && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={() => setShowCancelItemModal(false)}></div>
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
+            <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={() => setShowCancelItemModal(false)}></div>
             <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               {/* Header */}
-              <div className="sticky top-0 bg-white border-b border-brand-gray-200 px-6 py-4 flex items-center justify-between rounded-t-xl">
-                <h2 className="text-xl font-semibold text-brand-black">Cancel Item</h2>
-                <button
-                  onClick={() => setShowCancelItemModal(false)}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+              <div className="sticky top-0 bg-white z-10 rounded-t-xl">
+                <ModalHeader title="Cancel Item" onClose={() => setShowCancelItemModal(false)} closeAriaLabel="Close" />
               </div>
 
               {/* Content */}
@@ -1010,6 +1303,23 @@ function OrderDetailContent({ orderNumber, showToastMessage }: { orderNumber: st
           </div>
         </div>
       )}
+
+      {/* Write Review Modal - From Order Details item-level Rate & Review */}
+      {reviewModalProduct && (
+        <WriteReviewModal
+          productId={reviewModalProduct.id}
+          productName={reviewModalProduct.name}
+          isOpen={!!reviewModalProduct}
+          onClose={() => setReviewModalProduct(null)}
+          onSuccess={() => {
+            markProductAsReviewed(reviewModalProduct.id)
+            if (showToastMessage) {
+              showToastMessage('Thank you for your review!', 'success')
+            }
+            setReviewModalProduct(null)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -1095,7 +1405,7 @@ function CrossSellSection() {
   return (
     <>
       <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
-        <h2 className="text-xl font-semibold text-brand-black mb-4">You May Also Like</h2>
+        <h2 className="text-lg font-semibold text-brand-black mb-4">You May Also Like</h2>
         <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4">
           {crossSellProducts.map((product) => (
             <ProductCard
@@ -1207,6 +1517,7 @@ function renderIcon(iconName: string) {
 export default function MyAccountPage() {
   const pathname = usePathname()
   const router = useRouter()
+  const { openAgent } = useAgent()
   
   // Determine active section from URL
   const getActiveSectionFromPath = () => {
@@ -1245,6 +1556,9 @@ export default function MyAccountPage() {
   
   // Products state for QuickViewModal
   const [allProducts, setAllProducts] = useState<Product[]>([])
+  
+  // Need Help - question input for agent
+  const [helpQuestion, setHelpQuestion] = useState('')
   
   // Update active section when pathname changes
   useEffect(() => {
@@ -1315,6 +1629,7 @@ export default function MyAccountPage() {
             originalPrice: item.originalPrice,
             store: item.store,
             shippingGroup: item.shippingGroup,
+            bundleSetId: item.bundleSetId,
           })),
           subtotal: order.subtotal,
           promotions: order.promotions,
@@ -1566,11 +1881,12 @@ export default function MyAccountPage() {
 
   // Store Preferences State
   const [showStoreSelector, setShowStoreSelector] = useState(false)
+  const [showPreferredStoreHours, setShowPreferredStoreHours] = useState(true) // Default expanded per UX requirement
   const [preferredStoreForPickup, setPreferredStoreForPickup] = useState({
     id: '1',
     name: 'Salesforce Foundations - San Francisco',
     address: '415 Mission Street, San Francisco, CA 94105',
-    hours: 'Open today: 10:00 AM - 8:00 PM',
+    hours: 'Monday: 9 AM - 9 PM\nTuesday: 9 AM - 9 PM\nWednesday: 9 AM - 9 PM\nThursday: 9 AM - 9 PM\nFriday: 9 AM - 10 PM\nSaturday: 10 AM - 10 PM\nSunday: 11 AM - 7 PM',
   })
   const [showAddPersonModal, setShowAddPersonModal] = useState(false)
   const [isEditingPickupPreferences, setIsEditingPickupPreferences] = useState(false)
@@ -2019,10 +2335,15 @@ export default function MyAccountPage() {
           router.push(`/order/${order.orderNumber}`)
         }}
       >
-        {/* Meta Bar: Order Date, Total, Items Count, Status */}
+        {/* Meta Bar: Order ID, Order Date, Total, Items Count, Status */}
         <div className={`bg-brand-gray-50 border-b border-brand-gray-200 ${isCompact ? '-mx-4 -mt-4 px-4 pt-2.5 pb-2.5 mb-4' : '-mx-6 -mt-6 px-6 pt-3 pb-3 mb-6'} rounded-t-lg`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-6 flex-1">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:flex sm:gap-6 sm:flex-1">
+              {/* Order ID */}
+              <div>
+                <span className="text-xs text-brand-gray-500 font-medium">Order ID</span>
+                <p className="text-sm font-semibold text-brand-black mt-0.5">#{order.orderNumber}</p>
+              </div>
               {/* Order Date */}
               {order.orderDate && (
                 <div>
@@ -2041,8 +2362,8 @@ export default function MyAccountPage() {
                 <p className="text-sm font-semibold text-brand-black mt-0.5">{totalItemsCount}</p>
               </div>
             </div>
-            {/* Status Pill - Right aligned */}
-            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold ${
+            {/* Status Pill - Right aligned on desktop */}
+            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold self-start sm:self-center shrink-0 ${
               order.status === 'Delivered' || order.status === 'Picked Up'
                 ? 'bg-green-600 text-white'
                 : order.status === 'Partially Delivered'
@@ -2832,7 +3153,7 @@ export default function MyAccountPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                   <span className="text-brand-black font-medium">
-                    Order #{getOrderNumberFromPath()}
+                    #{getOrderNumberFromPath()}
                   </span>
                 </nav>
                 
@@ -2883,7 +3204,7 @@ export default function MyAccountPage() {
                     {/* Profile Info */}
                     <div className="flex-1 text-center sm:text-left w-full">
                       <div className="flex flex-col sm:flex-row items-center sm:items-start gap-2 sm:gap-3 mb-2">
-                        <h1 className="text-xl sm:text-2xl font-semibold text-brand-black">
+                        <h1 className="text-xl sm:text-lg font-semibold text-brand-black">
                           {userName} {userLastName}
                         </h1>
                         {loyaltyStatus && (
@@ -2944,7 +3265,7 @@ export default function MyAccountPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                         </svg>
                       </div>
-                      <p className="text-2xl font-semibold text-brand-black">$125.00</p>
+                      <p className="text-lg font-semibold text-brand-black">$125.00</p>
                       <p className="text-xs text-brand-gray-500 mt-1">2 active cards</p>
                       <p className="text-xs text-brand-blue-500 mt-2 hover:underline">Manage gift cards →</p>
                     </Link>
@@ -2957,7 +3278,7 @@ export default function MyAccountPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                       </div>
-                      <p className="text-2xl font-semibold text-brand-black">$50.00</p>
+                      <p className="text-lg font-semibold text-brand-black">$50.00</p>
                       <p className="text-xs text-brand-gray-500 mt-1">Available credit</p>
                       <p className="text-xs text-brand-blue-500 mt-2 hover:underline">View details →</p>
                     </Link>
@@ -2970,32 +3291,30 @@ export default function MyAccountPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
                         </svg>
                       </div>
-                      <p className="text-2xl font-semibold text-brand-black">{loyaltyPoints.toLocaleString()}</p>
+                      <p className="text-lg font-semibold text-brand-black">{loyaltyPoints.toLocaleString()}</p>
                       <p className="text-xs text-brand-gray-500 mt-1">Points available</p>
                       <p className="text-xs text-brand-blue-500 mt-2 hover:underline">View details →</p>
                     </Link>
                   </div>
                 </div>
 
-                {/* Recent Orders */}
+                {/* Recent Orders - matches Order History page UI */}
                 <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm">
-                  <div className="px-6 pt-6 pb-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h2 className="text-xl font-medium text-brand-black">Recent Orders</h2>
-                        <p className="text-sm text-brand-gray-600 mt-1">These are your last 5 orders</p>
-                      </div>
-                      <Link 
-                        href="/account/order-history"
-                        className="text-sm text-brand-blue-500 hover:text-brand-blue-600 font-medium"
-                      >
-                        View All
-                      </Link>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6 border-b border-brand-gray-200">
+                    <div>
+                      <h2 className="text-lg font-semibold text-brand-black mb-1.5">Recent Orders</h2>
+                      <p className="text-sm text-brand-gray-600">These are your last 5 orders</p>
                     </div>
+                    <Link 
+                      href="/account/order-history"
+                      className="text-sm text-brand-blue-500 hover:text-brand-blue-600 font-medium"
+                    >
+                      View All
+                    </Link>
                   </div>
                   <div className="divide-y divide-brand-gray-200">
                     {recentOrders.slice(0, 5).map((order, idx) => (
-                      <OrderSummaryCard key={idx} order={order} variant="compact" />
+                      <OrderSummaryCard key={idx} order={order} variant="full" />
                     ))}
                   </div>
                 </div>
@@ -3034,8 +3353,8 @@ export default function MyAccountPage() {
                             <p className="text-xs text-brand-gray-500">Order {order.orderNumber} • Delivered</p>
                           </div>
                           <Link
-                            href={`/product/${order.items?.[0]?.id || ''}?review=true`}
-                            className="px-4 py-2 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors whitespace-nowrap shadow-sm"
+                            href={`/order/${order.orderNumber}`}
+                            className="px-4 py-2 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors whitespace-nowrap shadow-sm inline-block"
                           >
                             Rate & review
                           </Link>
@@ -3073,25 +3392,62 @@ export default function MyAccountPage() {
 
                 {/* Need Help? */}
                 <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
-                  <h2 className="text-xl font-medium text-brand-black mb-2">Need Help?</h2>
+                  <h2 id="need-help-heading" className="text-xl font-medium text-brand-black mb-2">Need Help?</h2>
                   <p className="text-sm text-brand-gray-600 mb-4">
                     We&apos;re here to assist you with any questions or concerns
                   </p>
                   <div className="flex flex-wrap gap-3 mb-4">
-                    <button className="px-4 py-2 bg-brand-blue-500 text-white text-sm font-medium rounded-lg hover:bg-brand-blue-600 transition-colors shadow-sm">
-                      Start a Chat
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const q = helpQuestion.trim() || undefined
+                        openAgent(q)
+                        if (q) setHelpQuestion('')
+                      }}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-agentic-primary text-agentic-primary-foreground text-sm font-medium rounded-lg hover:opacity-90 transition-opacity shadow-sm"
+                      aria-label="Ask a question and get help"
+                    >
+                      <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                        <path d="M12 2L9.5 9.5L2 12L9.5 14.5L12 22L14.5 14.5L22 12L14.5 9.5L12 2Z" />
+                      </svg>
+                      <span>Ask a question</span>
                     </button>
-                    <button className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm">
+                    <Link
+                      href="/contact"
+                      className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
+                    >
                       Contact info
-                    </button>
-                    <button className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm">
+                    </Link>
+                    <Link
+                      href="/customer-service"
+                      className="px-4 py-2 bg-white border border-brand-gray-300 text-brand-black text-sm font-medium rounded-lg hover:bg-brand-gray-50 transition-colors shadow-sm"
+                    >
                       Browse FAQ
-                    </button>
+                    </Link>
                   </div>
+                  <label htmlFor="help-question-input" className="sr-only">
+                    Type your question to get help
+                  </label>
                   <input
+                    id="help-question-input"
                     type="text"
+                    value={helpQuestion}
+                    onChange={(e) => setHelpQuestion(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        const q = helpQuestion.trim()
+                        if (q) {
+                          openAgent(q)
+                          setHelpQuestion('')
+                        } else {
+                          openAgent()
+                        }
+                      }
+                    }}
                     placeholder="Type your question here..."
-                    className="w-full px-4 py-3 border border-brand-gray-300 rounded-lg text-brand-black placeholder-brand-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-brand-gray-300 rounded-lg text-brand-black placeholder-brand-gray-400 focus:outline-none focus:ring-2 focus:ring-agentic-ring focus:border-transparent"
+                    aria-describedby="need-help-heading"
                   />
                 </div>
 
@@ -3188,7 +3544,7 @@ export default function MyAccountPage() {
                 <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h2 className="text-2xl font-semibold text-brand-black mb-1.5">Account Details</h2>
+                      <h2 className="text-lg font-semibold text-brand-black mb-1.5">Account Details</h2>
                       <p className="text-sm text-brand-gray-600">Manage your personal information</p>
                     </div>
                   </div>
@@ -4346,16 +4702,11 @@ export default function MyAccountPage() {
                   }
                 }
 
-                // Search filter
+                // Search filter - Order ID only
                 if (orderSearchTerm.trim()) {
-                  const searchLower = orderSearchTerm.toLowerCase()
-                  const matchesOrderNumber = order.orderNumber?.toLowerCase().includes(searchLower) || false
-                  const matchesStatus = order.status?.toLowerCase().includes(searchLower) || false
-                  const matchesItems = order.items?.some(item => 
-                    item?.name?.toLowerCase().includes(searchLower)
-                  ) || false
-                  
-                  if (!matchesOrderNumber && !matchesStatus && !matchesItems) {
+                  const searchNormalized = orderSearchTerm.trim().toLowerCase().replace(/^#/, '')
+                  const matchesOrderId = order.orderNumber?.toLowerCase().includes(searchNormalized) ?? false
+                  if (!matchesOrderId) {
                     return false
                   }
                 }
@@ -4369,20 +4720,20 @@ export default function MyAccountPage() {
                   <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6 border-b border-brand-gray-200">
                                                               <div>
-                        <h2 className="text-2xl font-semibold text-brand-black mb-1.5">Order History</h2>
+                        <h2 className="text-lg font-semibold text-brand-black mb-1.5">Order History</h2>
                         <p className="text-sm text-brand-gray-600">View and track your orders</p>
                                                                     </div>
-                      <div className="flex items-center gap-3 flex-wrap">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:flex-wrap w-full sm:w-auto">
                         {/* Filter by Year */}
-                        <div className="flex items-center gap-2">
-                          <label htmlFor="year-filter" className="text-sm text-brand-gray-600 whitespace-nowrap">
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <label htmlFor="year-filter" className="text-sm text-brand-gray-600 whitespace-nowrap shrink-0">
                             Filter by Year:
                           </label>
                           <select
                             id="year-filter"
                             value={selectedYear}
                             onChange={(e) => setSelectedYear(e.target.value)}
-                            className="px-3 py-2 border border-brand-gray-200 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent shadow-sm bg-white min-w-[140px]"
+                            className="flex-1 sm:flex-none min-w-0 px-3 py-2 border border-brand-gray-200 rounded-lg text-sm text-brand-black focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent shadow-sm bg-white sm:min-w-[140px]"
                           >
                             <option value="all">All Years</option>
                             {availableYears.map(year => (
@@ -4391,15 +4742,15 @@ export default function MyAccountPage() {
                               </option>
                             ))}
                           </select>
-                                                                </div>
+                        </div>
                         {/* Search Input */}
-                        <div className="relative">
+                        <div className="relative w-full sm:w-auto">
                           <input
                             type="text"
-                            placeholder="Search orders"
+                            placeholder="Search by order ID"
                             value={orderSearchTerm}
                             onChange={(e) => setOrderSearchTerm(e.target.value)}
-                            className="w-[212px] pl-10 pr-4 py-2 border border-brand-gray-200 rounded-lg text-sm text-brand-black placeholder-brand-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent shadow-sm"
+                            className="w-full sm:w-[212px] pl-10 pr-4 py-2 border border-brand-gray-200 rounded-lg text-sm text-brand-black placeholder-brand-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-blue-500 focus:border-transparent shadow-sm"
                           />
                           <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -4450,7 +4801,7 @@ export default function MyAccountPage() {
                 <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h2 className="text-2xl font-semibold text-brand-black mb-1.5">{ENABLE_MULTIPLE_WISHLISTS ? 'My Wishlists' : 'My Wishlist'}</h2>
+                      <h2 className="text-lg font-semibold text-brand-black mb-1.5">{ENABLE_MULTIPLE_WISHLISTS ? 'My Wishlists' : 'My Wishlist'}</h2>
                       <p className="text-sm text-brand-gray-600">{ENABLE_MULTIPLE_WISHLISTS ? 'Manage your wishlists and saved items' : 'Your saved items for later'}</p>
                     </div>
                     {/* MULTI_WISHLIST_FEATURE: Create new list button - hidden in single wishlist mode */}
@@ -4818,7 +5169,7 @@ export default function MyAccountPage() {
                 <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h2 className="text-2xl font-semibold text-brand-black mb-1.5">Payment Methods</h2>
+                      <h2 className="text-lg font-semibold text-brand-black mb-1.5">Payment Methods</h2>
                       <p className="text-sm text-brand-gray-600">Manage your payment methods, gift cards, and store credit</p>
                     </div>
                   </div>
@@ -4968,7 +5319,7 @@ export default function MyAccountPage() {
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                                 </svg>
                               </div>
-                              <p className="text-2xl font-semibold text-brand-black mb-1">${card.balance.toFixed(2)}</p>
+                              <p className="text-lg font-semibold text-brand-black mb-1">${card.balance.toFixed(2)}</p>
                               <p className="text-xs text-brand-gray-500 mb-3">Card ending in {card.last4}</p>
                               <button 
                                 onClick={() => {
@@ -5037,7 +5388,7 @@ export default function MyAccountPage() {
                 <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h2 className="text-2xl font-semibold text-brand-black mb-1.5">Addresses</h2>
+                      <h2 className="text-lg font-semibold text-brand-black mb-1.5">Addresses</h2>
                       <p className="text-sm text-brand-gray-600">Manage your shipping addresses</p>
                     </div>
                     <button 
@@ -5132,7 +5483,7 @@ export default function MyAccountPage() {
                 {/* Loyalty Header */}
                 <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
                   <div>
-                    <h2 className="text-2xl font-semibold text-brand-black mb-1.5">Loyalty Rewards</h2>
+                    <h2 className="text-lg font-semibold text-brand-black mb-1.5">Loyalty Rewards</h2>
                     <p className="text-sm text-brand-gray-600">Your current tier, points, and exclusive benefits</p>
                   </div>
                 </div>
@@ -5453,7 +5804,7 @@ export default function MyAccountPage() {
                 {/* Store Preferences Header */}
                 <div className="bg-white border border-brand-gray-200 rounded-xl shadow-sm p-6">
                   <div>
-                    <h2 className="text-2xl font-semibold text-brand-black mb-1.5">Store Preferences</h2>
+                    <h2 className="text-lg font-semibold text-brand-black mb-1.5">Store Preferences</h2>
                     <p className="text-sm text-brand-gray-600">Manage your preferred store locations and pickup preferences</p>
                   </div>
                 </div>
@@ -5475,7 +5826,27 @@ export default function MyAccountPage() {
                   <div className="p-4 bg-brand-gray-50 rounded-lg border border-brand-gray-200">
                     <p className="text-sm font-medium text-brand-black mb-1">{preferredStoreForPickup.name}</p>
                     <p className="text-sm text-brand-gray-600">{preferredStoreForPickup.address}</p>
-                    <p className="text-xs text-brand-gray-500 mt-1">{preferredStoreForPickup.hours}</p>
+                    <div className="mt-2">
+                      <button
+                        onClick={() => setShowPreferredStoreHours(!showPreferredStoreHours)}
+                        className="text-brand-blue-500 font-medium underline hover:text-brand-blue-600 text-sm"
+                        aria-expanded={showPreferredStoreHours}
+                        aria-controls="preferred-store-hours"
+                        id="preferred-store-hours-toggle"
+                      >
+                        Store Hours
+                      </button>
+                      {showPreferredStoreHours && preferredStoreForPickup.hours && (
+                        <div
+                          id="preferred-store-hours"
+                          role="region"
+                          aria-labelledby="preferred-store-hours-toggle"
+                          className="mt-3 text-xs text-brand-gray-600 whitespace-pre-wrap"
+                        >
+                          {preferredStoreForPickup.hours.replace(/<[^>]*>/g, '').trim() || preferredStoreForPickup.hours}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -5685,19 +6056,19 @@ export default function MyAccountPage() {
       {/* Add/Edit Address Modal */}
       {showAddressModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowAddressModal(false)} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowAddressModal(false)} />
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full p-6" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-semibold text-brand-black">
+                <h2 className="text-lg font-semibold text-brand-black">
                   {editingAddressId ? 'Edit address' : 'Add new address'}
                 </h2>
                 <button
                   onClick={() => setShowAddressModal(false)}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                  className="modal-header__close"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -5856,17 +6227,17 @@ export default function MyAccountPage() {
       {/* Return Items Modal */}
       {showReturnModal && returningOrderId && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowReturnModal(false)} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowReturnModal(false)} />
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full p-6" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-semibold text-brand-black">Return Items</h2>
+                <h2 className="text-lg font-semibold text-brand-black">Return Items</h2>
                 <button
                   onClick={() => setShowReturnModal(false)}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                  className="modal-header__close"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -5974,17 +6345,17 @@ export default function MyAccountPage() {
       {/* Delete Account Modal */}
       {showDeleteAccountModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowDeleteAccountModal(false)} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowDeleteAccountModal(false)} />
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-semibold text-red-600">Delete Account</h2>
                 <button
                   onClick={() => setShowDeleteAccountModal(false)}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                  className="modal-header__close"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -6045,16 +6416,16 @@ export default function MyAccountPage() {
       {/* MULTI_WISHLIST_FEATURE: Rename Wishlist Modal - only shown when multiple wishlists enabled */}
       {ENABLE_MULTIPLE_WISHLISTS && showRenameWishlistModal && renamingWishlistId && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowRenameWishlistModal(false)} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowRenameWishlistModal(false)} />
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-semibold text-brand-black">Rename Wishlist</h2>
+                <h2 className="text-lg font-semibold text-brand-black">Rename Wishlist</h2>
                 <button
                   onClick={() => setShowRenameWishlistModal(false)}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                  className="modal-header__close"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -6092,16 +6463,16 @@ export default function MyAccountPage() {
       {/* MULTI_WISHLIST_FEATURE: Share Wishlist Modal - only shown when multiple wishlists enabled */}
       {ENABLE_MULTIPLE_WISHLISTS && showShareWishlistModal && sharingWishlistId && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowShareWishlistModal(false)} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowShareWishlistModal(false)} />
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-semibold text-brand-black">Share Wishlist</h2>
+                <h2 className="text-lg font-semibold text-brand-black">Share Wishlist</h2>
                 <button
                   onClick={() => setShowShareWishlistModal(false)}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                  className="modal-header__close"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -6163,12 +6534,12 @@ export default function MyAccountPage() {
       {/* Add Payment Method Modal */}
       {showPaymentModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => { setShowPaymentModal(false); setShowNewBillingAddress(false); setSelectedBillingAddressId(''); }} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => { setShowPaymentModal(false); setShowNewBillingAddress(false); setSelectedBillingAddressId(''); }} />
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full p-6" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-semibold text-brand-black">Add Payment Method</h2>
+                <h2 className="text-lg font-semibold text-brand-black">Add Payment Method</h2>
                 <button
                   onClick={() => { setShowPaymentModal(false); setShowNewBillingAddress(false); setSelectedBillingAddressId(''); }}
                   className="p-2 text-brand-gray-400 hover:text-brand-black transition-colors"
@@ -6763,20 +7134,20 @@ export default function MyAccountPage() {
       {/* Change Avatar Modal */}
       {showAvatarModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowAvatarModal(false)} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowAvatarModal(false)} />
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-semibold text-brand-black">Change Profile Picture</h2>
+                <h2 className="text-lg font-semibold text-brand-black">Change Profile Picture</h2>
                 <button
                   onClick={() => {
                     setShowAvatarModal(false)
                     setAvatarPreview(null)
                   }}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                  className="modal-header__close"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -6856,21 +7227,21 @@ export default function MyAccountPage() {
       {/* Select Interests Modal */}
       {showInterestsModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => {
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => {
             setShowInterestsModal(false)
           }} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="flex items-center justify-between p-6 border-b border-brand-gray-200">
-                <h2 className="text-xl font-semibold text-brand-black">Add Your Interests</h2>
+                <h2 className="text-lg font-semibold text-brand-black">Add Your Interests</h2>
                 <button
                   onClick={() => {
                     setShowInterestsModal(false)
                   }}
                   className="text-brand-gray-400 hover:text-brand-black transition-colors"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -7020,15 +7391,15 @@ export default function MyAccountPage() {
       {/* Select Preferences Modal */}
       {showPreferencesModal && preferencesModalCategory && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => {
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => {
             setShowPreferencesModal(false)
             setPreferencesModalCategory(null)
           }} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="flex items-center justify-between p-6 border-b border-brand-gray-200">
-                <h2 className="text-xl font-semibold text-brand-black">Select Product Categories</h2>
+                <h2 className="text-lg font-semibold text-brand-black">Select Product Categories</h2>
                 <button
                   onClick={() => {
                     setShowPreferencesModal(false)
@@ -7036,7 +7407,7 @@ export default function MyAccountPage() {
                   }}
                   className="text-brand-gray-400 hover:text-brand-black transition-colors"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -7151,19 +7522,19 @@ export default function MyAccountPage() {
       {/* Add Authorized Person Modal */}
       {showAddPersonModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowAddPersonModal(false)} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowAddPersonModal(false)} />
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full p-6" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-semibold text-brand-black">
+                <h2 className="text-lg font-semibold text-brand-black">
                   Add Authorized Person
                 </h2>
                 <button
                   onClick={() => setShowAddPersonModal(false)}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                  className="modal-header__close"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -7281,17 +7652,17 @@ export default function MyAccountPage() {
       {/* Add Gift Card Modal */}
       {showAddGiftCardModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowAddGiftCardModal(false)} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowAddGiftCardModal(false)} />
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-semibold text-brand-black">Add Gift Card</h2>
+                <h2 className="text-lg font-semibold text-brand-black">Add Gift Card</h2>
                 <button
                   onClick={() => setShowAddGiftCardModal(false)}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                  className="modal-header__close"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -7374,21 +7745,21 @@ export default function MyAccountPage() {
       {/* Remove Gift Card Confirmation Modal */}
       {showRemoveGiftCardModal && giftCardToRemove && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => {
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => {
             setShowRemoveGiftCardModal(false)
             setGiftCardToRemove(null)
           }} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-brand-black">Remove Gift Card</h2>
+                <h2 className="text-lg font-semibold text-brand-black">Remove Gift Card</h2>
                 <button
                   onClick={() => {
                     setShowRemoveGiftCardModal(false)
                     setGiftCardToRemove(null)
                   }}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                  className="modal-header__close"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -7417,7 +7788,7 @@ export default function MyAccountPage() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                           </svg>
                         </div>
-                        <p className="text-xl font-semibold text-brand-black mb-1">${cardBalance.toFixed(2)}</p>
+                        <p className="text-lg font-semibold text-brand-black mb-1">${cardBalance.toFixed(2)}</p>
                         <p className="text-xs text-brand-gray-500">Card ending in {cardLast4}</p>
                       </div>
                       {cardBalance > 0 && (
@@ -7470,21 +7841,21 @@ export default function MyAccountPage() {
       {/* Remove Payment Method Confirmation Modal */}
       {showRemovePaymentMethodModal && paymentMethodToRemove && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => {
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => {
             setShowRemovePaymentMethodModal(false)
             setPaymentMethodToRemove(null)
           }} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-brand-black">Remove Payment Method</h2>
+                <h2 className="text-lg font-semibold text-brand-black">Remove Payment Method</h2>
                 <button
                   onClick={() => {
                     setShowRemovePaymentMethodModal(false)
                     setPaymentMethodToRemove(null)
                   }}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                  className="modal-header__close"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -7606,21 +7977,21 @@ export default function MyAccountPage() {
       {/* Remove Address Confirmation Modal */}
       {showRemoveAddressModal && addressToRemove && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => {
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => {
             setShowRemoveAddressModal(false)
             setAddressToRemove(null)
           }} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-brand-black">Remove Address</h2>
+                <h2 className="text-lg font-semibold text-brand-black">Remove Address</h2>
                 <button
                   onClick={() => {
                     setShowRemoveAddressModal(false)
                     setAddressToRemove(null)
                   }}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                  className="modal-header__close"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -7707,12 +8078,12 @@ export default function MyAccountPage() {
       {/* Change Password Modal */}
       {showChangePasswordModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowChangePasswordModal(false)} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowChangePasswordModal(false)} />
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="mb-6">
-                <h2 className="text-xl font-semibold text-brand-black mb-1">Password & Security</h2>
+                <h2 className="text-lg font-semibold text-brand-black mb-1">Password & Security</h2>
                 <p className="text-sm text-brand-gray-600">Manage your password and security settings</p>
               </div>
 
@@ -7871,18 +8242,18 @@ export default function MyAccountPage() {
       {/* Add Passkey Modal */}
       {showAddPasskeyModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowAddPasskeyModal(false)} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowAddPasskeyModal(false)} />
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h2 className="text-xl font-semibold text-brand-black mb-1">Add Passkey</h2>
+                  <h2 className="text-lg font-semibold text-brand-black mb-1">Add Passkey</h2>
                   <p className="text-sm text-brand-gray-600">Set up a passkey for faster, more secure sign-in</p>
                 </div>
                 <button
                   onClick={() => setShowAddPasskeyModal(false)}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                  className="modal-header__close"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -7980,21 +8351,21 @@ export default function MyAccountPage() {
       {/* Remove Passkey Confirmation Modal */}
       {showRemovePasskeyModal && passkeyToRemove && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => {
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => {
             setShowRemovePasskeyModal(false)
             setPasskeyToRemove(null)
           }} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-brand-black">Remove Passkey</h2>
+                <h2 className="text-lg font-semibold text-brand-black">Remove Passkey</h2>
                 <button
                   onClick={() => {
                     setShowRemovePasskeyModal(false)
                     setPasskeyToRemove(null)
                   }}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                  className="modal-header__close"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -8090,20 +8461,20 @@ export default function MyAccountPage() {
       {/* Credit History Modal */}
       {showCreditHistory && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowCreditHistory(false)} />
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div data-modal-overlay className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowCreditHistory(false)} />
+          <div data-modal-center className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-xl shadow-xl max-w-3xl w-full p-6" onClick={(e) => e.stopPropagation()}>
               {/* Modal Header */}
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h2 className="text-2xl font-semibold text-brand-black">Store Credit History</h2>
+                  <h2 className="text-lg font-semibold text-brand-black">Store Credit History</h2>
                   <p className="text-sm text-brand-gray-600 mt-1">View your store credit transactions and balance history</p>
                 </div>
                 <button
                   onClick={() => setShowCreditHistory(false)}
-                  className="p-2 text-brand-gray-500 hover:text-brand-black hover:bg-brand-gray-100 rounded-lg transition-colors"
+                  className="modal-header__close"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>

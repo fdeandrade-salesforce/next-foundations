@@ -41,7 +41,8 @@ export class SupabaseOrderRepository implements IOrderRepository {
           query = query.ilike('order_date', `%${filters.year}%`)
         }
         if (filters.searchTerm) {
-          query = query.or(`order_number.ilike.%${filters.searchTerm}%,customer_name.ilike.%${filters.searchTerm}%`)
+          const termPattern = `%${filters.searchTerm.trim()}%`
+          query = query.ilike('order_number', termPattern)
         }
       }
 

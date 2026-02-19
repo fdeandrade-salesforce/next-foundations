@@ -17,7 +17,7 @@ export const mockStores: Store[] = [
     zipCode: '94105',
     country: 'USA',
     phone: '+1 (415) 555-0100',
-    hours: 'Open today: 10:00 AM - 8:00 PM',
+    hours: 'Monday: 9 AM - 9 PM\nTuesday: 9 AM - 9 PM\nWednesday: 9 AM - 9 PM\nThursday: 9 AM - 9 PM\nFriday: 9 AM - 10 PM\nSaturday: 10 AM - 10 PM\nSunday: 11 AM - 7 PM',
     latitude: 37.7879,
     longitude: -122.3962,
     isOpen: true,

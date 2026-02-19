@@ -13,7 +13,7 @@ export default function ProductPage() {
   const params = useParams()
   const searchParams = useSearchParams()
   const router = useRouter()
-  const productId = params.id as string
+  const productId = (params?.id ?? '') as string
   
   const [product, setProduct] = useState<Product | null>(null)
   const [productVariants, setProductVariants] = useState<Product[]>([])
@@ -73,7 +73,7 @@ export default function ProductPage() {
         // Get suggested products (same category, different product name)
         const suggested = allProducts
           .filter(p => p.category === foundProduct.category && p.name !== foundProduct.name)
-          .slice(0, 8)
+          .slice(0, 16)
         setSuggestedProducts(suggested)
         
         // Get recently viewed products (excluding current product)
@@ -128,7 +128,7 @@ export default function ProductPage() {
         suggestedProducts={suggestedProducts}
         recentlyViewed={recentlyViewed}
         initialSelection={Object.fromEntries(
-          Array.from(searchParams.entries()).map(([key, value]) => [key, value])
+          Array.from(searchParams?.entries() ?? []).map(([key, value]) => [key, value])
         )}
       />
     </ErrorBoundary>

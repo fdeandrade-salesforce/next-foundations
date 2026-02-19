@@ -178,10 +178,10 @@ export default function OrderDetailPage({ order }: OrderDetailPageProps) {
           <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 pb-6 border-b border-brand-gray-200">
             <div>
               <h1 className="text-3xl font-semibold text-brand-black mb-2">Order Details</h1>
-              <p className="text-lg text-brand-gray-600 mb-2">Order #{order.orderNumber}</p>
+              <p className="text-lg text-brand-gray-600 mb-2">#{order.orderNumber}</p>
               {order.customerEmail && (
                 <p className="text-sm text-brand-gray-600">
-                  Confirmation email sent to {order.customerEmail}
+                  Receipt and order details sent to {order.customerEmail}
                 </p>
               )}
             </div>
