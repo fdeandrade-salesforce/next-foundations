@@ -5,6 +5,8 @@ import TrackingConsentBanner from '../components/TrackingConsentBanner'
 import { AgentProvider } from '../context/AgentContext'
 import AgentLayoutWrapper from '../components/AgentLayoutWrapper'
 import CssDiagnostics from '../components/CssDiagnostics'
+import DemoDisclaimerModal from '../components/DemoDisclaimerModal'
+import InternalDemoBadge from '../components/InternalDemoBadge'
 
 export const metadata: Metadata = {
   metadataBase: process.env.NEXT_PUBLIC_SITE_URL
@@ -66,6 +68,8 @@ export default function RootLayout({
           <AgentLayoutWrapper>
             {children}
             <TrackingConsentBanner />
+            <DemoDisclaimerModal />
+            <InternalDemoBadge />
           </AgentLayoutWrapper>
         </AgentProvider>
       </body>
